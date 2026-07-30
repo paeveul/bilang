@@ -1,0 +1,30 @@
+# Claude Code config/memory — must never be pushed (Paeveul standing rule, claude_gitignore)
+.claude/
+
+# Dependencies
+node_modules/
+
+# Environment secrets — never commit real values
+.env
+.env.local
+.env.*.local
+.env.example
+
+# Vercel
+.vercel/
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+
+# Internal build notes — not for GitHub
+README.md
+
+# Impeccable design skill — ephemeral/machine-local files (config.json, design.json,
+# critique/ are tracked in git per Impeccable's own recommendation; these are not)
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/*.png
+.impeccable/live/server.json
+.impeccable/live/sessions/
+.impeccable/live/previews/

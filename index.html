@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Bilang — free photo-to-split bill splitting</title>
+  <meta name="description" content="Photo your receipt, review the items, assign who had what, and share a link with everyone's total. Free, no accounts, no app to install." />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+
+  <!-- ===================================================================
+       Header
+  =================================================================== -->
+  <header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto max-w-lg px-4 py-3 flex items-center justify-between">
+      <span class="font-semibold text-lg tracking-tight">🧾 Bilang</span>
+      <span class="text-xs text-slate-400">by Paeveul</span>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-lg px-4 pb-16">
+
+    <!-- =================================================================
+         Screen: landing
+    ================================================================= -->
+    <section data-screen="landing" class="app-screen py-8 space-y-6">
+      <div class="text-center space-y-2">
+        <h1 class="text-2xl font-bold">Split any bill in seconds</h1>
+        <p class="text-slate-600">Snap a photo of the receipt, confirm the items, say who had what — everyone gets a link with their share and how to pay.</p>
+      </div>
+
+      <ul class="text-sm text-slate-600 space-y-2 bg-white rounded-xl border border-slate-200 p-4">
+        <li class="flex gap-2"><span>✅</span><span>No accounts, no app to install</span></li>
+        <li class="flex gap-2"><span>✅</span><span>You always review and can fix what the photo scan got wrong</span></li>
+        <li class="flex gap-2"><span>✅</span><span>Payment happens directly between you and your friends — this tool never touches your money</span></li>
+      </ul>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+        <label class="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" id="consent-checkbox" class="mt-1 h-4 w-4 rounded border-slate-300" />
+          <span class="text-sm text-slate-700">
+            I agree to the
+            <button type="button" id="privacy-link" class="underline decoration-dotted underline-offset-2">Privacy Notice</button>
+            and
+            <button type="button" id="tos-link" class="underline decoration-dotted underline-offset-2">Terms of Service</button>,
+            and understand my receipt photo is sent to Anthropic (the maker of the Claude AI model) to be read, and is never stored afterwards.
+          </span>
+        </label>
+        <button id="start-btn" disabled
+          class="w-full rounded-lg bg-amber-500 text-white font-semibold py-3 disabled:opacity-40 disabled:cursor-not-allowed transition">
+          Start a new split
+        </button>
+      </div>
+
+      <!-- Placeholder legal copy panels, shown/hidden via JS -->
+      <div id="privacy-panel" class="hidden bg-white rounded-xl border border-slate-200 p-4 text-sm text-slate-600 space-y-2">
+        <h2 class="font-semibold text-slate-900">Privacy Notice</h2>
+        <p>[PLACEHOLDER — Javier to draft final copy] This app sends your receipt photo to Anthropic's Claude AI model (processed in the United States) to read the items on it. The photo itself is never saved — it exists only for the few seconds it takes to read it, then it is discarded. What IS saved: the item names/amounts you confirm, the names of people you assign items to, the totals, and the bill owner's payment details (DuitNow ID / bank account / QR) — all shown on the shareable link. This data is kept for a limited time and then deleted.</p>
+        <button type="button" class="close-legal-panel text-amber-600 font-medium">Close</button>
+      </div>
+      <div id="tos-panel" class="hidden bg-white rounded-xl border border-slate-200 p-4 text-sm text-slate-600 space-y-2">
+        <h2 class="font-semibold text-slate-900">Terms of Service</h2>
+        <p>[PLACEHOLDER — Javier to draft final copy] Bilang is a free tool that helps you itemise a receipt and calculate who owes what. Paeveul never collects, holds, or moves any money — every payment happens directly between you and the people you split with, using whatever payment details the bill owner enters. Paeveul is not a party to that payment and is not responsible for it being sent, received, or correct.</p>
+        <button type="button" class="close-legal-panel text-amber-600 font-medium">Close</button>
+      </div>
+    </section>
+
+    <!-- =================================================================
+         Screen: capture
+    ================================================================= -->
+    <section data-screen="capture" class="app-screen py-8 space-y-6 hidden">
+      <h2 class="text-xl font-bold">Photo the receipt</h2>
+      <p class="text-slate-600 text-sm">Camera or gallery — whichever is easier. Try to get it flat and well-lit.</p>
+
+      <label class="block">
+        <span class="sr-only">Upload receipt photo</span>
+        <input type="file" id="receipt-input" accept="image/*" capture="environment"
+          class="block w-full text-sm text-slate-500 file:mr-4 file:py-3 file:px-5 file:rounded-lg file:border-0 file:font-semibold file:bg-amber-500 file:text-white hover:file:bg-amber-600 cursor-pointer" />
+      </label>
+
+      <div id="capture-preview-wrap" class="hidden">
+        <img id="capture-preview" alt="Receipt preview" class="rounded-xl border border-slate-200 max-h-96 w-full object-contain bg-white" />
+      </div>
+
+      <button id="back-to-landing-btn" class="text-sm text-slate-500 underline">← Back</button>
+    </section>
+
+    <!-- =================================================================
+         Screen: parsing
+    ================================================================= -->
+    <section data-screen="parsing" class="app-screen py-16 text-center space-y-4 hidden">
+      <div class="animate-spin mx-auto h-10 w-10 rounded-full border-4 border-amber-500 border-t-transparent"></div>
+      <p class="text-slate-600">Reading your receipt…</p>
+    </section>
+
+    <!-- =================================================================
+         Screen: review (item review/correct step — non-negotiable)
+    ================================================================= -->
+    <section data-screen="review" class="app-screen py-8 space-y-4 hidden">
+      <h2 class="text-xl font-bold">Check the items</h2>
+      <p class="text-slate-600 text-sm">Photo-scanning isn't perfect on faded or handwritten receipts — fix anything that's wrong before continuing. Nothing is final until you confirm.</p>
+
+      <div id="review-error" class="hidden rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3"></div>
+
+      <div id="review-items" class="space-y-3"></div>
+
+      <button id="add-item-btn" type="button" class="w-full rounded-lg border border-dashed border-slate-300 text-slate-500 py-2 text-sm">
+        + Add missing item
+      </button>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+        <h3 class="font-semibold text-sm text-slate-700">Bill totals</h3>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <label class="space-y-1">
+            <span class="text-slate-500">Subtotal (RM)</span>
+            <input type="number" step="0.01" id="field-subtotal" class="w-full rounded-md border-slate-300" />
+          </label>
+          <label class="space-y-1">
+            <span class="text-slate-500">Service charge (RM)</span>
+            <input type="number" step="0.01" id="field-service" class="w-full rounded-md border-slate-300" />
+          </label>
+          <label class="space-y-1">
+            <span class="text-slate-500">Tax (RM)</span>
+            <input type="number" step="0.01" id="field-tax" class="w-full rounded-md border-slate-300" />
+          </label>
+          <label class="space-y-1">
+            <span class="text-slate-500">Grand total (RM)</span>
+            <input type="number" step="0.01" id="field-grand-total" class="w-full rounded-md border-slate-300" />
+          </label>
+        </div>
+      </div>
+
+      <button id="confirm-items-btn" class="w-full rounded-lg bg-amber-500 text-white font-semibold py-3">
+        Looks good — assign items
+      </button>
+      <button id="back-to-capture-btn" class="text-sm text-slate-500 underline">← Retake photo</button>
+    </section>
+
+    <!-- =================================================================
+         Screen: assign
+    ================================================================= -->
+    <section data-screen="assign" class="app-screen py-8 space-y-4 hidden">
+      <h2 class="text-xl font-bold">Who had what?</h2>
+      <p class="text-slate-600 text-sm">Add everyone splitting this bill, then tick who's covering each item. An item split between several people divides its cost evenly among them.</p>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+        <h3 class="font-semibold text-sm text-slate-700">Payers</h3>
+        <div id="payer-chips" class="flex flex-wrap gap-2"></div>
+        <form id="add-payer-form" class="flex gap-2">
+          <input type="text" id="add-payer-input" placeholder="Add a name" maxlength="40"
+            class="flex-1 rounded-md border-slate-300 text-sm" />
+          <button type="submit" class="rounded-md bg-slate-800 text-white text-sm px-4">Add</button>
+        </form>
+      </div>
+
+      <div id="assign-items" class="space-y-3"></div>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+        <h3 class="font-semibold text-sm text-slate-700">Running totals</h3>
+        <div id="assign-live-totals" class="text-sm space-y-1"></div>
+      </div>
+
+      <div id="assign-error" class="hidden rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3"></div>
+
+      <button id="confirm-assign-btn" class="w-full rounded-lg bg-amber-500 text-white font-semibold py-3">
+        Continue to payment details
+      </button>
+      <button id="back-to-review-btn" class="text-sm text-slate-500 underline">← Back to items</button>
+    </section>
+
+    <!-- =================================================================
+         Screen: payment (bill owner enters payment handle)
+    ================================================================= -->
+    <section data-screen="payment" class="app-screen py-8 space-y-4 hidden">
+      <h2 class="text-xl font-bold">How should people pay you?</h2>
+      <p class="text-slate-600 text-sm">Enter your DuitNow ID, bank account, or a QR string. This is shown on the shared link so people can pay you directly — Paeveul never touches this money.</p>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+        <label class="block space-y-1">
+          <span class="text-sm text-slate-600">Payment details</span>
+          <textarea id="field-payment-handle" rows="3" maxlength="200"
+            placeholder="e.g. DuitNow: 012-3456789 (Ahmad Bin Ali), or Maybank 1234 5678 9012"
+            class="w-full rounded-md border-slate-300 text-sm"></textarea>
+        </label>
+      </div>
+
+      <div id="payment-error" class="hidden rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3"></div>
+
+      <button id="create-split-btn" class="w-full rounded-lg bg-amber-500 text-white font-semibold py-3">
+        Create the split
+      </button>
+      <button id="back-to-assign-btn" class="text-sm text-slate-500 underline">← Back</button>
+    </section>
+
+    <!-- =================================================================
+         Screen: creating (brief loading while /api/split runs)
+    ================================================================= -->
+    <section data-screen="creating" class="app-screen py-16 text-center space-y-4 hidden">
+      <div class="animate-spin mx-auto h-10 w-10 rounded-full border-4 border-amber-500 border-t-transparent"></div>
+      <p class="text-slate-600">Creating your split…</p>
+    </section>
+
+    <!-- =================================================================
+         Screen: share
+    ================================================================= -->
+    <section data-screen="share" class="app-screen py-8 space-y-4 text-center hidden">
+      <h2 class="text-xl font-bold">Your split is ready 🎉</h2>
+      <p class="text-slate-600 text-sm">Share this link (or the QR code) with everyone on the bill — it shows each person exactly what they owe and how to pay you.</p>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+        <div id="share-qr" class="flex justify-center"></div>
+        <div class="flex items-stretch gap-2">
+          <input type="text" id="share-url-field" readonly class="flex-1 rounded-md border-slate-300 text-sm bg-slate-50" />
+          <button id="copy-link-btn" class="rounded-md bg-slate-800 text-white text-sm px-4 shrink-0">Copy</button>
+        </div>
+        <a id="whatsapp-share-btn" target="_blank" rel="noopener"
+          class="block w-full rounded-lg bg-green-600 text-white font-semibold py-3">
+          Share via WhatsApp
+        </a>
+      </div>
+
+      <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 text-left">
+        ⚠️ <strong>Don't share this link with strangers.</strong> Anyone who opens it can see your payment details (DuitNow ID / bank account / QR) — only send it to the people actually splitting this bill.
+      </p>
+
+      <button id="new-split-btn" class="text-sm text-slate-500 underline">Start another split</button>
+    </section>
+
+    <!-- =================================================================
+         Screen: payer (read-only view when opening /s/<id>)
+    ================================================================= -->
+    <section data-screen="payer" class="app-screen py-8 space-y-4 hidden">
+      <h2 class="text-xl font-bold">Bill split</h2>
+
+      <div id="payer-loading" class="text-center py-12 space-y-4">
+        <div class="animate-spin mx-auto h-10 w-10 rounded-full border-4 border-amber-500 border-t-transparent"></div>
+        <p class="text-slate-600">Loading split…</p>
+      </div>
+
+      <div id="payer-error" class="hidden rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3"></div>
+
+      <div id="payer-content" class="hidden space-y-4">
+        <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+          <h3 class="font-semibold text-sm text-slate-700">Items</h3>
+          <div id="payer-items" class="text-sm space-y-1"></div>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+          <h3 class="font-semibold text-sm text-slate-700">Who owes what</h3>
+          <div id="payer-totals" class="text-sm space-y-2"></div>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+          <h3 class="font-semibold text-sm text-slate-700">Pay the bill owner</h3>
+          <p id="payer-payment-handle" class="text-sm font-mono bg-slate-50 rounded-md p-3 break-words"></p>
+        </div>
+
+        <p class="text-xs text-slate-400 text-center">Split created via Bilang, a free tool by Paeveul. Paeveul never holds or routes this money.</p>
+      </div>
+    </section>
+
+    <!-- =================================================================
+         Screen: error (generic fallback)
+    ================================================================= -->
+    <section data-screen="error" class="app-screen py-16 text-center space-y-4 hidden">
+      <p class="text-4xl">😕</p>
+      <p id="error-message" class="text-slate-600"></p>
+      <button id="error-retry-btn" class="text-sm text-amber-600 underline">Start over</button>
+    </section>
+
+  </main>
+
+  <footer class="border-t border-slate-200 py-6 text-center text-xs text-slate-400">
+    Bilang — a free tool by Paeveul. We never hold or route your money.
+  </footer>
+
+  <!-- Vendored MIT-licensed QR encoder (Kazuhiko Arase) — classic script,
+       attaches the global `qrcode` factory function before app.js runs. -->
+  <script src="js/vendor/qrcode.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
