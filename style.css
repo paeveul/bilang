@@ -1,8 +1,8 @@
-/* style.css — small overrides beyond Tailwind CDN utilities.
-   Per Paeveul's client-site convention: Tailwind via CDN handles almost
-   everything; this file only holds the handful of things Tailwind utility
-   classes can't express cleanly (screen show/hide, input base styling,
-   the QR code container, and focus states). */
+/* style.css — small overrides beyond Tailwind's utility classes.
+   Tailwind is compiled via the Tailwind CLI (input.css -> style.compiled.css,
+   see package.json's build:css script) — not CDN. This file only holds the
+   handful of things Tailwind utility classes can't express cleanly (screen
+   show/hide, input base styling, the QR code container, and focus states). */
 
 /* Screens are toggled by app.js adding/removing `.hidden` (Tailwind's own
    `hidden` utility - display:none). No custom show/hide rules needed beyond
