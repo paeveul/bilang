@@ -6,8 +6,16 @@
   "engines": {
     "node": ">=18"
   },
+  "scripts": {
+    "build:css": "tailwindcss -i ./input.css -o ./style.compiled.css --minify",
+    "watch:css": "tailwindcss -i ./input.css -o ./style.compiled.css --watch",
+    "test": "node --test js/totals.test.mjs"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
     "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
   }
 }

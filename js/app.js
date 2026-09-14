@@ -199,15 +199,15 @@ function buildReviewItemRow(item) {
     <div class="grid grid-cols-3 gap-2 text-sm">
       <label class="space-y-1">
         <span class="text-xs text-slate-500">Qty</span>
-        <input type="number" step="1" min="0" class="item-qty w-full" value="${item.qty ?? 1}" />
+        <input type="number" step="1" min="0" class="item-qty w-full" value="${escapeAttr(item.qty ?? 1)}" />
       </label>
       <label class="space-y-1">
         <span class="text-xs text-slate-500">Unit price</span>
-        <input type="number" step="0.01" min="0" class="item-unit-price w-full" value="${item.unit_price ?? 0}" />
+        <input type="number" step="0.01" min="0" class="item-unit-price w-full" value="${escapeAttr(item.unit_price ?? 0)}" />
       </label>
       <label class="space-y-1">
         <span class="text-xs text-slate-500">Line total</span>
-        <input type="number" step="0.01" min="0" class="item-line-total w-full" value="${item.line_total ?? 0}" />
+        <input type="number" step="0.01" min="0" class="item-line-total w-full" value="${escapeAttr(item.line_total ?? 0)}" />
       </label>
     </div>
     <button type="button" class="remove-item-btn text-xs text-red-500">Remove item</button>
@@ -513,10 +513,15 @@ async function renderPayerView(id) {
     contentEl.classList.remove('hidden');
 
     document.getElementById('payer-items').innerHTML = split.items
-      .map(
-        (item) =>
-          `<div class="flex justify-between"><span>${escapeHtml(item.name)}${item.qty > 1 ? ` ×${item.qty}` : ''}</span><span>${formatRM(item.line_total)}</span></div>`
-      )
+      .map((item) => {
+        // qty is meant to be a number; coerce and validate it before use so
+        // it's safe to render regardless of what the payload actually
+        // contains — not merely because the `> 1` comparison happens to
+        // reject non-numeric strings today.
+        const qtyNum = Number(item.qty);
+        const qtySuffix = Number.isFinite(qtyNum) && qtyNum > 1 ? ` ×${qtyNum}` : '';
+        return `<div class="flex justify-between"><span>${escapeHtml(item.name)}${qtySuffix}</span><span>${formatRM(item.line_total)}</span></div>`;
+      })
       .join('');
 
     const payers = Object.keys(split.totals.per_person || {});
