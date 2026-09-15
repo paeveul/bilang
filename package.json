@@ -12,7 +12,7 @@
     "build": "npm run build:css && vite build",
     "dev": "vite",
     "preview": "vite preview",
-    "test": "node --test js/totals.test.mjs src/screens/payer-item-row.security.test.mjs"
+    "test": "node --test js/totals.test.mjs src/screens/payer-item-row.security.test.mjs api/_lib/validate.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
