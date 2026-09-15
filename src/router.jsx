@@ -12,13 +12,26 @@
 //                  links) — its match pattern is kept character-identical
 //                  to js/app.js's own regex on purpose, not just similar.
 //
-// NOTE ON "ten routes" (flagged in the Step 2 dispatch report for Alex):
-// the current (pre-migration) app has exactly two real URL shapes. The
-// other eight/nine "screens" are internal show/hide states reached via
-// in-page navigation with no URL change at all (see js/app.js's
-// `showScreen()` — actually named differently there, see that file).
-// This router preserves that distinction rather than inventing nine new
-// URLs no design spec has asked for.
+// ROUTING SHAPE — RESOLVED, 2026-09-14 (was flagged "ten routes?" in the
+// Step 2 dispatch report). Alex's final decision, adopting Tony's
+// product/UX recommendation over Howard's own earlier revised technical
+// read: exactly 4 real, individually-addressable URLs total — homepage
+// ("/"), this file's "/s/:id" (the payer link, untouched throughout),
+// plus two NOT YET BUILT by this item — the credit-pack picker (item 11)
+// and account settings (item 18). The other six in-flow screens (capture,
+// review/parse, assign, roster, correction, payment-handle) stay
+// internal, session-only state with no URL of their own — exactly what
+// this router already implements below; no route-count change was
+// needed to match the final shape. When items 11 and 18 build their
+// screens, they add their own real-URL entries to `resolve()` below,
+// against the structure this item establishes (22.5) — this file does
+// not stub them out in advance, since Item 22's own scope explicitly
+// excludes building those screens (22 intro, "does not build any new
+// screen").
+// Full reasoning: `01-paeveul-main/product-owner-agent-room/deliverables/
+// decision-log-bilang-screen-routing-v1.md` (Tony), cross-referenced from
+// `bilang-mvp1-implementation-plans.md` Item 22 and from
+// `bilang/pm/bilang-pm-tracker.md` §1b.2.
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 // Byte-identical to js/app.js's existing payer-view match, on purpose —

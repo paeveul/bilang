@@ -1,14 +1,34 @@
-// src/App.jsx — Item 22 Step 2: app shell.
+// src/App.jsx — Item 22 Steps 2, 5, 6, 7: app shell.
 //
-// The eight/nine internal screens (everything except the payer view)
-// still share one URL ("/") today — see src/router.jsx's note. This
-// component stands in for js/app.js's screen state machine so Step 2 can
-// prove every screen name is reachable, without migrating any screen's
-// actual content (Steps 5-8).
-import { useState } from 'react';
+// The internal screens (everything except the payer view) share one URL
+// ("/") today. This is now the confirmed final shape, not a placeholder —
+// see src/router.jsx's "ROUTING SHAPE — RESOLVED" note (Alex, 2026-09-14):
+// six of these screens (capture, review, assign, roster, correction,
+// payment-handle) stay session-only permanently; the credit-pack-picker
+// and account-settings screens will get their own real URLs when items
+// 11 and 18 build them, which this shell does not do.
+//
+// Steps 5-7 (this pass) replace ScreenStub with real content for every
+// screen except 'review' — that screen is Item 22 Step 8 in full (the
+// Round 2 correction-screen rebuild, gated on §22.7 Q1, explicitly out of
+// scope for this dispatch) and stays a ScreenStub. This is a real,
+// flagged gap: the landing→capture→review→assign→payment→share path
+// cannot be walked end-to-end through the UI until Step 8 lands, since
+// nothing after capture can hand real reviewed items to AssignScreen. See
+// this pass's dispatch report for how AssignScreen/PaymentScreen were
+// independently verified in the meantime.
 import { RouterProvider, useRouter } from './router.jsx';
+import { BillProvider, useBillState } from './state/BillContext.jsx';
 import PayerScreen from './screens/PayerScreen.jsx';
 import ScreenStub from './screens/ScreenStub.jsx';
+import LandingScreen from './screens/LandingScreen.jsx';
+import CaptureScreen from './screens/CaptureScreen.jsx';
+import ParsingScreen from './screens/ParsingScreen.jsx';
+import AssignScreen from './screens/AssignScreen.jsx';
+import PaymentScreen from './screens/PaymentScreen.jsx';
+import CreatingScreen from './screens/CreatingScreen.jsx';
+import ShareScreen from './screens/ShareScreen.jsx';
+import ErrorScreen from './screens/ErrorScreen.jsx';
 
 // Order matches index.html's existing data-screen sections, in document order.
 const SCREEN_NAMES = [
@@ -24,19 +44,48 @@ const SCREEN_NAMES = [
 ];
 
 function AppShell() {
-  const [screen] = useState('landing');
-  const screenNumber = SCREEN_NAMES.indexOf(screen) + 1;
-  return (
-    <div className="mx-auto max-w-lg px-4 pb-16">
-      <ScreenStub name={screen} screenNumber={screenNumber} />
-    </div>
-  );
+  const { screen } = useBillState();
+
+  switch (screen) {
+    case 'landing':
+      return <LandingScreen />;
+    case 'capture':
+      return <CaptureScreen />;
+    case 'parsing':
+      return <ParsingScreen />;
+    case 'review':
+      // Step 8, not this pass — see this file's header comment.
+      return <ScreenStub name="review" screenNumber={SCREEN_NAMES.indexOf('review') + 1} />;
+    case 'assign':
+      return <AssignScreen />;
+    case 'payment':
+      return <PaymentScreen />;
+    case 'creating':
+      return <CreatingScreen />;
+    case 'share':
+      return <ShareScreen />;
+    case 'error':
+    default:
+      return <ErrorScreen />;
+  }
 }
 
 function Routes() {
   const { route, params } = useRouter();
-  if (route === 'payer') return <PayerScreen id={params.id} />;
-  return <AppShell />;
+  if (route === 'payer') {
+    return (
+      <div className="mx-auto max-w-lg px-4 pb-16">
+        <PayerScreen id={params.id} />
+      </div>
+    );
+  }
+  return (
+    <BillProvider>
+      <div className="mx-auto max-w-lg px-4 pb-16">
+        <AppShell />
+      </div>
+    </BillProvider>
+  );
 }
 
 export default function App() {

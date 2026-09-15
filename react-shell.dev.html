@@ -25,6 +25,11 @@
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
   <div id="root"></div>
+  <!-- Vendored MIT-licensed QR encoder (Kazuhiko Arase), same script
+       index.html loads — ShareScreen.jsx (Item 22 Step 5) needs
+       `window.qrcode` present before it mounts. Added in the Steps 5-7
+       pass since Step 2's stub screens had no QR rendering yet. -->
+  <script src="/js/vendor/qrcode.js"></script>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
