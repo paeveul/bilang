@@ -9,78 +9,23 @@
 //
 // Screen names and their meaning are unchanged from index.html's existing
 // data-screen values: landing, capture, parsing, review, assign, payment,
-// creating, share, error, payer. 'review' is intentionally NOT built by
-// this pass — see src/screens/ReviewScreen.jsx's header comment — so it
-// stays the same placeholder Step 2 already established.
-import { createContext, useCallback, useContext, useMemo, useReducer } from 'react';
-
-const initialState = {
-  screen: 'landing',
-  receiptImageBase64: null,
-  receiptMimeType: null,
-  parsed: null, // {items: [{id, name, category, qty, unit_price, line_total}], subtotal, service_charge, tax, grand_total}
-  payers: ['Me'],
-  assignments: {}, // itemId -> string[] of payer names
-  ownerPaymentHandle: '',
-  errorMessage: '',
-  shareUrl: '',
-};
-
-let itemIdCounter = 0;
-function nextItemId() {
-  itemIdCounter += 1;
-  return `item-${itemIdCounter}`;
-}
-
-function reducer(state, action) {
-  switch (action.type) {
-    case 'GO_TO_SCREEN':
-      return { ...state, screen: action.screen };
-    case 'SET_RECEIPT':
-      return { ...state, receiptImageBase64: action.base64, receiptMimeType: action.mimeType };
-    case 'CLEAR_RECEIPT_IMAGE':
-      // The receipt image has done its one job (the single parseReceipt()
-      // call) — drop it from memory now, matching js/app.js's runParse().
-      return { ...state, receiptImageBase64: null };
-    case 'SET_PARSED': {
-      const items = (action.parsed.items || []).map((item) => ({ id: nextItemId(), ...item }));
-      return { ...state, parsed: { ...action.parsed, items } };
-    }
-    case 'ADD_PAYER': {
-      if (!action.name || state.payers.includes(action.name)) return state;
-      return { ...state, payers: [...state.payers, action.name] };
-    }
-    case 'REMOVE_PAYER': {
-      if (state.payers.length <= 1) return state; // always keep at least one payer
-      const assignments = { ...state.assignments };
-      Object.keys(assignments).forEach((itemId) => {
-        assignments[itemId] = (assignments[itemId] || []).filter((p) => p !== action.name);
-      });
-      return { ...state, payers: state.payers.filter((p) => p !== action.name), assignments };
-    }
-    case 'SET_ITEM_ASSIGNMENT': {
-      const current = state.assignments[action.itemId] || [];
-      const next = action.checked
-        ? current.includes(action.name) ? current : [...current, action.name]
-        : current.filter((p) => p !== action.name);
-      return { ...state, assignments: { ...state.assignments, [action.itemId]: next } };
-    }
-    case 'ENSURE_ITEM_DEFAULT_ASSIGNMENT': {
-      if (state.assignments[action.itemId]) return state;
-      return { ...state, assignments: { ...state.assignments, [action.itemId]: [...state.payers] } };
-    }
-    case 'SET_PAYMENT_HANDLE':
-      return { ...state, ownerPaymentHandle: action.value };
-    case 'SET_SHARE_URL':
-      return { ...state, shareUrl: action.url };
-    case 'SET_ERROR':
-      return { ...state, errorMessage: action.message, screen: 'error' };
-    case 'RESET':
-      return { ...initialState, payers: ['Me'] };
-    default:
-      return state;
-  }
-}
+// creating, share, error, payer. 'review' is now Item 22 Step 8's combined
+// correction + assignment screen (src/screens/ReviewScreen.jsx) — see that
+// file's header comment. 'assign' is retired: its Step 7 tick-list logic
+// was absorbed into ReviewScreen.jsx per Alex's 2026-09-22 scope decision
+// (bilang-mvp1-implementation-plans.md §22.7 Q1 resolution addendum,
+// bilang-pm-tracker.md's Step 8 row) — the state machine no longer visits
+// 'assign' as its own screen, though the name is left in SCREEN_NAMES'
+// historical comment trail in App.jsx rather than silently erased.
+//
+// The actual reducer/state/action-shape logic lives in ./bill-reducer.js —
+// a plain .js file with no JSX in it, split out specifically so it's
+// directly testable under Node's built-in test runner with no JSX
+// transform (same reason src/screens/payer-item-row.js exists as its own
+// file — see that file's header comment for the precedent). This file adds
+// only the React context/provider/hooks wiring around that logic.
+import { createContext, useContext, useMemo, useReducer } from 'react';
+import { reducer, initialState, defaultAssignment, nextItemId } from './bill-reducer.js';
 
 const BillStateContext = createContext(null);
 const BillDispatchContext = createContext(null);
@@ -98,6 +43,15 @@ export function BillProvider({ children }) {
       setItemAssignment: (itemId, name, checked) =>
         dispatch({ type: 'SET_ITEM_ASSIGNMENT', itemId, name, checked }),
       ensureItemDefaultAssignment: (itemId) => dispatch({ type: 'ENSURE_ITEM_DEFAULT_ASSIGNMENT', itemId }),
+      setItemMode: (itemId, mode) => dispatch({ type: 'SET_ITEM_MODE', itemId, mode }),
+      setItemManualUnit: (itemId, unit, lineTotal) =>
+        dispatch({ type: 'SET_ITEM_MANUAL_UNIT', itemId, unit, lineTotal }),
+      setItemManualValue: (itemId, name, text, cents) =>
+        dispatch({ type: 'SET_ITEM_MANUAL_VALUE', itemId, name, text, cents }),
+      updateItemField: (itemId, field, value) => dispatch({ type: 'UPDATE_ITEM_FIELD', itemId, field, value }),
+      addItem: () => dispatch({ type: 'ADD_ITEM' }),
+      removeItem: (itemId) => dispatch({ type: 'REMOVE_ITEM', itemId }),
+      updateBillField: (field, value) => dispatch({ type: 'UPDATE_BILL_FIELD', field, value }),
       setPaymentHandle: (value) => dispatch({ type: 'SET_PAYMENT_HANDLE', value }),
       setShareUrl: (url) => dispatch({ type: 'SET_SHARE_URL', url }),
       setError: (message) => dispatch({ type: 'SET_ERROR', message }),
@@ -127,5 +81,8 @@ export function useBillActions() {
 
 // Exported for local testing only (mirrors router.jsx's resolveForTest
 // precedent) — lets a test seed deterministic item ids without going
-// through a real parseReceipt() call.
-export const __test__ = { nextItemId, reducer, initialState };
+// through a real parseReceipt() call. Prefer importing directly from
+// ./bill-reducer.js in a .test.mjs file (no JSX transform needed there);
+// this re-export exists so code already importing __test__ from this
+// module keeps working.
+export const __test__ = { nextItemId, reducer, initialState, defaultAssignment };

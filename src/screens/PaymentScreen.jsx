@@ -92,7 +92,7 @@ export default function PaymentScreen() {
       <button
         type="button"
         className="text-sm text-slate-500 underline"
-        onClick={() => goToScreen('assign')}
+        onClick={() => goToScreen('review')}
       >
         ← Back
       </button>
