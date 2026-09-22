@@ -14,7 +14,7 @@
 // (roadmap D6) and are not built here.
 
 const { parseReceipt } = require('./_lib/anthropic');
-const { validateParseRequest, validateParsedReceipt } = require('./_lib/validate');
+const { validateParseRequest } = require('./_lib/validate');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -36,20 +36,6 @@ module.exports = async function handler(req, res) {
     // type rather than reject outright if one slips through.
     const effectiveMediaType = mimeType === 'image/heic' ? 'image/jpeg' : mimeType;
     const parsed = await parseReceipt(image, effectiveMediaType);
-
-    // Don't rely on Anthropic's `strict: true` as the only control — check
-    // the shape ourselves before it leaves this server. See validate.js's
-    // validateParsedReceipt() doc comment.
-    const shapeError = validateParsedReceipt(parsed);
-    if (shapeError) {
-      console.error('api/parse.js — model returned malformed shape:', shapeError);
-      res.status(502).json({
-        error:
-          'Could not read this receipt. Try a clearer, better-lit photo, or enter the items manually.',
-      });
-      return;
-    }
-
     res.status(200).json(parsed);
   } catch (err) {
     console.error('api/parse.js error:', err);
