@@ -1,8 +1,8 @@
-// src/main.jsx — React entry point. Not wired into the shipped
-// index.html yet — the old vanilla client (js/app.js) stays live in
-// production through Step 11; the old client is only deleted at Step 12
-// (F3: one clean cut). This entry is exercised via the dev-only
-// react-shell.dev.html during Steps 2-11 — see that file's header comment.
+// src/main.jsx — React entry point.
+// Item 22 Step 12: wired into the shipped index.html now — the old
+// vanilla client (js/app.js) is deleted and react-shell.dev.html (its
+// dev-only home through Steps 2-11) is gone too, promoted into
+// index.html directly (F3: one clean cut).
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.jsx';

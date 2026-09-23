@@ -1,13 +1,14 @@
 // vite.config.mjs — Item 22 (React + Vite migration), Step 1, + Step 9's
-// Preact alias (F11, added this pass — see below).
+// Preact alias (F11), + Step 12's cutover.
 //
-// index.html itself still builds the OLD vanilla client through this
-// config (js/app.js) — F3's "one clean cut" means the React app
-// (react-shell.dev.html / src/main.jsx) isn't wired into `build.outDir` as
-// the shipped entry until Step 12. This file's job right now is narrower:
-// prove the toolchain, and — as of this pass — carry the React-import
-// alias so that whichever entry ends up pointed at `react` resolves to
-// Preact underneath, in either config.
+// Item 22 Step 12: index.html now IS the React app's entry (promoted from
+// react-shell.dev.html, deleted this step) — the old vanilla client
+// (js/app.js) is gone, so this config's default root-index.html entry
+// builds the React app directly. No `build.rollupOptions.input` change
+// was needed: Vite already defaulted to root `index.html` as its sole
+// entry, and that file's own content is what changed, not this config.
+// The Preact alias below still applies to whichever entry imports
+// `react`, so it carries over unchanged.
 //
 // build.outDir is 'dist' per vercel.json's outputDirectory (F2, 22.3).
 import { defineConfig } from 'vite';
