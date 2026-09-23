@@ -12,13 +12,15 @@
     "build": "npm run build:css && vite build",
     "dev": "vite",
     "preview": "vite preview",
-    "test": "node --test js/totals.test.mjs src/screens/payer-item-row.security.test.mjs src/state/bill-context-assignment.test.mjs && node --import ./src/test/register-jsx.mjs --test src/screens/ReviewScreen.radix.test.jsx"
+    "test": "node --test js/totals.test.mjs src/screens/payer-item-row.security.test.mjs src/state/bill-context-assignment.test.mjs && node --import ./src/test/register-jsx.mjs --test src/screens/ReviewScreen.radix.test.jsx src/components/AnimatedMoney.test.jsx src/screens/ParsingScreen.motion.test.jsx src/screens/ReviewScreen.motion.test.jsx src/App.reduced-motion-reduce.test.jsx src/App.reduced-motion-no-preference.test.jsx src/App.smoke.test.jsx"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
     "@radix-ui/react-accordion": "^1.2.20",
     "@radix-ui/react-toggle-group": "^1.1.19",
     "@supabase/supabase-js": "^2.45.0",
+    "motion": "^13.4.1",
+    "preact": "^10.29.8",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

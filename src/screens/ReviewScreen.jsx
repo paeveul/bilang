@@ -65,8 +65,6 @@
 //     NOT the two-direction Ledger/Statement token system §4/§6 of the
 //     design spec describes — no other screen in this app has that system
 //     wired in yet either, so this isn't a Step-8-specific corner cut.
-//   - motion.dev: not an existing dependency and not this pass's scope —
-//     Item 22 Step 9's own separate, not-yet-started scope.
 //   - Merchant name / receipt date (§5.1 point 1's header) aren't in the
 //     current data model — now Item 23's confirmed, separately-tracked
 //     scope (bilang-mvp1-implementation-plans.md#item-23), not built here.
@@ -78,9 +76,34 @@
 //     live behaviour, where these three fields are independently editable
 //     with no cross-check. §5.1.1 point 4's block is fully implemented;
 //     I8 is a separate, not-yet-built correction-row feature.
+//
+// motion.dev (this pass — Item 22 Step 9, §22.3's placements table):
+//   - "Review -> assignment transition" (layout animation): each
+//     Accordion.Item is a `motion.div layout` (via Radix's `asChild`) —
+//     when a row's own height changes, or another row's does, the
+//     surrounding rows reflow smoothly instead of jumping. This is the
+//     placement §22.3 names for this exact screen, now that assignment
+//     lives inside it (Step 8's Decision B).
+//   - "Totals recalculating" (motion values, spring): every derived money
+//     figure that changes live as the user ticks/edits — the per-item
+//     manual "remaining to allocate" indicator and the running per-person
+//     totals — renders through `<AnimatedMoney>`
+//     (src/components/AnimatedMoney.jsx). Per §22.3's explicit safety
+//     requirement, those figures animate while being edited but must snap
+//     instantly on blur and on confirm — `moneySnapTick` below is bumped at
+//     exactly those two moments and threaded through as `snapTick`.
+//   - "Steppers, confirm buttons, tick-lists" (`whileTap`, kept under
+//     ~150ms per §22.3): the Confirm button, "+ Add missing item", every
+//     Radix Accordion.Trigger and ToggleGroup.Item (via `asChild`), and
+//     each payer tick-row.
+//   - `prefers-reduced-motion` is handled once, globally, by App.jsx's
+//     `<MotionConfig reducedMotion="user">` — nothing screen-specific
+//     needed here.
 import { useEffect, useRef, useState } from 'react';
 import * as Accordion from '@radix-ui/react-accordion';
 import * as ToggleGroup from '@radix-ui/react-toggle-group';
+import { motion } from 'motion/react';
+import AnimatedMoney from '../components/AnimatedMoney.jsx';
 import {
   computeTotals,
   formatRM,
@@ -91,6 +114,11 @@ import {
   toCents,
 } from '../../js/totals.js';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
+
+// Kept well under §22.3's ~150ms ceiling for `whileTap` feedback, so a tap
+// never reads as a delayed response.
+const TAP_TRANSITION = { duration: 0.1 };
+const TAP_SCALE = { scale: 0.97 };
 
 const TRUST_COPY =
   "Photo-scanning isn't perfect on faded or handwritten receipts — fix anything that's wrong before continuing. Nothing is final until you confirm.";
@@ -154,6 +182,11 @@ export default function ReviewScreen() {
   const [expandedIds, setExpandedIds] = useState(() => new Set());
   const [blockedIds, setBlockedIds] = useState(() => new Set());
   const [validationError, setValidationError] = useState('');
+  // motion.dev "Totals recalculating" placement (§22.3) — every
+  // AnimatedMoney figure on this screen snaps instantly, instead of
+  // animating, whenever this counter changes. Bumped on blur of a manual
+  // amount field and at the top of handleConfirm — see those call sites.
+  const [moneySnapTick, setMoneySnapTick] = useState(0);
 
   // Refs to every currently-mounted manual-value <input>, keyed by
   // `itemId -> payerName -> element`. Populated by each input's own `ref`
@@ -273,7 +306,18 @@ export default function ReviewScreen() {
     clearBlocked(item.id);
   }
 
+  function handleManualValueBlur() {
+    // §22.3: a money figure must snap to its exact value on blur, never be
+    // seen still gliding after the user has moved on from the field that
+    // was driving it.
+    setMoneySnapTick((n) => n + 1);
+  }
+
   function handleConfirm() {
+    // §22.3: same guarantee at the moment of confirmation — whatever is
+    // submitted must be the exact figure on screen, not a value still
+    // mid-animation, regardless of which branch below actually navigates.
+    setMoneySnapTick((n) => n + 1);
     if (items.length === 0) {
       setValidationError('Every item needs a name, and there must be at least one item.');
       return;
@@ -336,19 +380,31 @@ export default function ReviewScreen() {
           const remaining = manualItemRemainingCents(item, assignment);
 
           return (
-            <Accordion.Item key={item.id} value={item.id} className="assign-item-row space-y-2">
-              {/* Collapsed summary row */}
-              <Accordion.Header>
-                <Accordion.Trigger className="w-full flex justify-between items-start gap-3 text-left">
-                  <span className="flex-1">
-                    <span className="block text-sm font-medium">{item.name || '(unnamed item)'}</span>
-                    <span className="block text-xs text-slate-500">
-                      {assignmentSummaryText(item, assignment, payers.length)}
-                    </span>
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums">{formatRM(item.line_total)}</span>
-                </Accordion.Trigger>
-              </Accordion.Header>
+            <Accordion.Item key={item.id} value={item.id} asChild>
+              {/* motion.dev "Review -> assignment transition" placement
+                  (§22.3): `layout` measures this row's box before and after
+                  every re-render and animates the difference, so the other
+                  rows reflow smoothly when this one's content changes. */}
+              <motion.div layout className="assign-item-row space-y-2">
+                {/* Collapsed summary row */}
+                <Accordion.Header>
+                  <Accordion.Trigger asChild>
+                    <motion.button
+                      type="button"
+                      whileTap={TAP_SCALE}
+                      transition={TAP_TRANSITION}
+                      className="w-full flex justify-between items-start gap-3 text-left"
+                    >
+                      <span className="flex-1">
+                        <span className="block text-sm font-medium">{item.name || '(unnamed item)'}</span>
+                        <span className="block text-xs text-slate-500">
+                          {assignmentSummaryText(item, assignment, payers.length)}
+                        </span>
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums">{formatRM(item.line_total)}</span>
+                    </motion.button>
+                  </Accordion.Trigger>
+                </Accordion.Header>
 
               <Accordion.Content>
                 {expanded && (
@@ -430,17 +486,23 @@ export default function ReviewScreen() {
                       }}
                       className="flex rounded-md border border-slate-300 overflow-hidden text-xs font-medium"
                     >
-                      <ToggleGroup.Item
-                        value="equal"
-                        className={`flex-1 min-h-[48px] ${mode === 'equal' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}
-                      >
-                        Equal split
+                      <ToggleGroup.Item value="equal" asChild>
+                        <motion.button
+                          whileTap={TAP_SCALE}
+                          transition={TAP_TRANSITION}
+                          className={`flex-1 min-h-[48px] ${mode === 'equal' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}
+                        >
+                          Equal split
+                        </motion.button>
                       </ToggleGroup.Item>
-                      <ToggleGroup.Item
-                        value="manual"
-                        className={`flex-1 min-h-[48px] ${mode === 'manual' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}
-                      >
-                        Set amounts
+                      <ToggleGroup.Item value="manual" asChild>
+                        <motion.button
+                          whileTap={TAP_SCALE}
+                          transition={TAP_TRANSITION}
+                          className={`flex-1 min-h-[48px] ${mode === 'manual' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}
+                        >
+                          Set amounts
+                        </motion.button>
                       </ToggleGroup.Item>
                     </ToggleGroup.Root>
 
@@ -459,18 +521,25 @@ export default function ReviewScreen() {
                         {blocked ? (
                           <>
                             <div>
-                              {remaining > 0
-                                ? `${formatRMLocked(fromCents(remaining))} still to allocate`
-                                : `${formatRMLocked(fromCents(-remaining))} over`}
+                              <AnimatedMoney
+                                cents={Math.abs(remaining)}
+                                snapTick={moneySnapTick}
+                                locked
+                              />{' '}
+                              {remaining > 0 ? 'still to allocate' : 'over'}
                             </div>
-                            <div>Shares must total {formatRMLocked(item.line_total)}.</div>
+                            <div>
+                              Shares must total{' '}
+                              <AnimatedMoney cents={toCents(item.line_total)} snapTick={moneySnapTick} locked />.
+                            </div>
                           </>
                         ) : remaining === 0 ? (
                           'Fully allocated ✓'
-                        ) : remaining > 0 ? (
-                          `${formatRMLocked(fromCents(remaining))} left to allocate`
                         ) : (
-                          `${formatRMLocked(fromCents(-remaining))} over`
+                          <>
+                            <AnimatedMoney cents={Math.abs(remaining)} snapTick={moneySnapTick} locked />{' '}
+                            {remaining > 0 ? 'left to allocate' : 'over'}
+                          </>
                         )}
                       </div>
                     )}
@@ -510,7 +579,12 @@ export default function ReviewScreen() {
                             ? assignment.manual.values[name]
                             : undefined;
                         return (
-                          <div key={name} className="flex items-center gap-2 min-h-[48px]">
+                          <motion.div
+                            key={name}
+                            whileTap={TAP_SCALE}
+                            transition={TAP_TRANSITION}
+                            className="flex items-center gap-2 min-h-[48px]"
+                          >
                             <input
                               type="checkbox"
                               checked={isTicked}
@@ -526,30 +600,34 @@ export default function ReviewScreen() {
                                 ref={(el) => registerManualInputRef(item.id, name, el)}
                                 value={value?.text ?? ''}
                                 onChange={(e) => handleManualValueChange(item, name, e.target.value)}
+                                onBlur={handleManualValueBlur}
                                 placeholder={unit === '%' ? '0' : '0.00'}
                                 className="w-20 rounded-md border-slate-300 text-sm text-right tabular-nums min-h-[48px]"
                                 aria-label={`${name}'s ${unit === '%' ? 'percentage' : 'amount'} for ${item.name || 'this item'}`}
                               />
                             )}
-                          </div>
+                          </motion.div>
                         );
                       })}
                     </div>
                   </div>
                 )}
-              </Accordion.Content>
+                </Accordion.Content>
+              </motion.div>
             </Accordion.Item>
           );
         })}
       </Accordion.Root>
 
-      <button
+      <motion.button
         type="button"
         onClick={addItem}
+        whileTap={TAP_SCALE}
+        transition={TAP_TRANSITION}
         className="w-full rounded-lg border border-dashed border-slate-300 text-slate-600 text-sm py-3 min-h-[48px]"
       >
         + Add missing item
-      </button>
+      </motion.button>
 
       {/* §5.1 point 6 — bill-level totals, each editable */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
@@ -604,7 +682,11 @@ export default function ReviewScreen() {
           {payers.map((name) => (
             <div key={name} className="flex justify-between">
               <span>{name}</span>
-              <span className="font-semibold">{formatRM((perPerson[name]?.totalCents ?? 0) / 100)}</span>
+              <AnimatedMoney
+                className="font-semibold"
+                cents={Math.round(perPerson[name]?.totalCents ?? 0)}
+                snapTick={moneySnapTick}
+              />
             </div>
           ))}
         </div>
@@ -636,14 +718,16 @@ export default function ReviewScreen() {
       )}
 
       {/* §5.1 point 8 — primary CTA, disabled (not hidden) while unresolved */}
-      <button
+      <motion.button
         type="button"
         onClick={handleConfirm}
         disabled={!canConfirm}
+        whileTap={canConfirm ? TAP_SCALE : undefined}
+        transition={TAP_TRANSITION}
         className="w-full rounded-lg bg-amber-500 disabled:bg-slate-300 text-white font-semibold py-3 min-h-[48px]"
       >
         Confirm and continue
-      </button>
+      </motion.button>
     </section>
   );
 }

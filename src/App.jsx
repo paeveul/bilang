@@ -16,6 +16,15 @@
 // (Step 7) is removed; its tick-list logic lives inside ReviewScreen.jsx
 // now. The landing→capture→review→payment→create→share path is walkable
 // end-to-end through the UI as of this pass.
+// Item 22 Step 9: `<MotionConfig reducedMotion="user">` is the "one line of
+// setup" §22.3 calls for — it reads the OS-level prefers-reduced-motion
+// media query itself and, when set, strips every motion/react animation
+// under it down to instant/opacity-only, globally, with no per-component
+// wiring required. Every motion.dev placement in this app (ParsingScreen's
+// scan-wait loop, ReviewScreen's layout animation, AnimatedMoney's spring,
+// the whileTap feedback) inherits this automatically because they're all
+// motion/react primitives mounted inside this provider.
+import { MotionConfig } from 'motion/react';
 import { RouterProvider, useRouter } from './router.jsx';
 import { BillProvider, useBillState } from './state/BillContext.jsx';
 import PayerScreen from './screens/PayerScreen.jsx';
@@ -88,16 +97,18 @@ function Routes() {
 
 export default function App() {
   return (
-    <RouterProvider>
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-lg px-4 py-3 flex items-center justify-between">
-          <span className="font-semibold text-lg tracking-tight">🧾 Bilang</span>
-          <span className="text-xs text-slate-400">by Paeveul</span>
-        </div>
-      </header>
-      <main>
-        <Routes />
-      </main>
-    </RouterProvider>
+    <MotionConfig reducedMotion="user">
+      <RouterProvider>
+        <header className="border-b border-slate-200 bg-white">
+          <div className="mx-auto max-w-lg px-4 py-3 flex items-center justify-between">
+            <span className="font-semibold text-lg tracking-tight">🧾 Bilang</span>
+            <span className="text-xs text-slate-400">by Paeveul</span>
+          </div>
+        </header>
+        <main>
+          <Routes />
+        </main>
+      </RouterProvider>
+    </MotionConfig>
   );
 }
