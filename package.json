@@ -12,7 +12,7 @@
     "build": "npm run build:css && vite build",
     "dev": "vite",
     "preview": "vite preview",
-    "test": "node --test js/totals.test.mjs src/screens/payer-item-row.security.test.mjs src/state/bill-context-assignment.test.mjs api/_lib/validate.test.mjs && node --import ./src/test/register-jsx.mjs --test src/screens/ReviewScreen.radix.test.jsx src/screens/ReviewScreen.validation.test.jsx src/components/AnimatedMoney.test.jsx src/screens/ParsingScreen.motion.test.jsx src/screens/ReviewScreen.motion.test.jsx src/App.reduced-motion-reduce.test.jsx src/App.reduced-motion-no-preference.test.jsx src/App.smoke.test.jsx"
+    "test": "node --test js/totals.test.mjs src/screens/payer-item-row.security.test.mjs src/state/bill-context-assignment.test.mjs api/_lib/validate.test.mjs api/_lib/totals.test.mjs && node --import ./src/test/register-jsx.mjs --test src/screens/ReviewScreen.radix.test.jsx src/screens/ReviewScreen.validation.test.jsx src/components/AnimatedMoney.test.jsx src/screens/ParsingScreen.motion.test.jsx src/screens/ReviewScreen.motion.test.jsx src/App.reduced-motion-reduce.test.jsx src/App.reduced-motion-no-preference.test.jsx src/App.smoke.test.jsx"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
