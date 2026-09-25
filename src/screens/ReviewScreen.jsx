@@ -114,6 +114,7 @@ import {
   toCents,
 } from '../../js/totals.js';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
+import { validateItems } from './review-validation.js';
 
 // Kept well under §22.3's ~150ms ceiling for `whileTap` feedback, so a tap
 // never reads as a delayed response.
@@ -199,6 +200,33 @@ export default function ReviewScreen() {
   // is exactly what §5.1.1 point 4 needs here.
   const manualInputRefs = useRef({});
 
+  // Item-field validation (mirrors the server's item rules — see
+  // review-validation.js). `showItemErrors` flips on at the first failed
+  // Confirm, so nobody sees red text before they've tried to continue;
+  // after that the messages are live and clear as each field is fixed.
+  // `pendingFocus` = { itemId, field } of the first problem, consumed by the
+  // effect below once the (possibly just-expanded) row has rendered.
+  const [showItemErrors, setShowItemErrors] = useState(false);
+  const [pendingFocus, setPendingFocus] = useState(null);
+  const fieldRefs = useRef({}); // `${itemId}:${field}` -> element
+
+  function registerFieldRef(itemId, field, el) {
+    const key = `${itemId}:${field}`;
+    if (el) fieldRefs.current[key] = el;
+    else delete fieldRefs.current[key];
+  }
+
+  useEffect(() => {
+    if (!pendingFocus) return undefined;
+    const key = `${pendingFocus.itemId}:${pendingFocus.field}`;
+    const tryFocus = () => fieldRefs.current[key]?.focus();
+    tryFocus();
+    // Radix mounts a just-opened row's content a beat later on some paths.
+    const t = setTimeout(tryFocus, 0);
+    setPendingFocus(null);
+    return () => clearTimeout(t);
+  }, [pendingFocus]);
+
   function registerManualInputRef(itemId, name, el) {
     const forItem = manualInputRefs.current[itemId] || (manualInputRefs.current[itemId] = {});
     if (el) forItem[name] = el;
@@ -238,8 +266,12 @@ export default function ReviewScreen() {
   const { perPerson } = computeTotals(items, assignments, parsed, payers);
 
   const unresolvedCount = items.filter((item) => !isItemResolved(item, assignments[item.id])).length;
-  const hasEmptyName = items.some((item) => !item.name || !item.name.trim());
-  const canConfirm = items.length > 0 && !hasEmptyName && unresolvedCount === 0;
+  // Field problems do NOT disable Confirm: a disabled button can't be
+  // clicked, so it could never tell the customer *which* item to fix.
+  // handleConfirm blocks instead, shows the messages and moves focus.
+  const itemProblems = validateItems(items);
+  const problemsById = new Map(itemProblems.map((p) => [p.itemId, p.problems]));
+  const canConfirm = items.length > 0 && unresolvedCount === 0;
 
   // §5.1 point 3 — arithmetic-mismatch notice. Compares the items as
   // currently corrected against the receipt's own stated subtotal field,
@@ -322,8 +354,18 @@ export default function ReviewScreen() {
       setValidationError('Every item needs a name, and there must be at least one item.');
       return;
     }
-    if (hasEmptyName) {
-      setValidationError('Every item needs a name, and there must be at least one item.');
+    if (itemProblems.length > 0) {
+      const first = itemProblems[0];
+      setShowItemErrors(true);
+      setValidationError('');
+      // Open every offending row so its messages are visible, then focus
+      // the first offending field.
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
+        itemProblems.forEach((p) => next.add(p.itemId));
+        return next;
+      });
+      setPendingFocus({ itemId: first.itemId, field: first.problems[0].field });
       return;
     }
     if (unresolvedCount > 0) {
@@ -378,6 +420,11 @@ export default function ReviewScreen() {
           const ticked = tickedOf(assignment);
           const unit = assignment && !Array.isArray(assignment) ? assignment.manual.unit : 'RM';
           const remaining = manualItemRemainingCents(item, assignment);
+          const fieldProblems = showItemErrors ? problemsById.get(item.id) || [] : [];
+          const bad = (field) => fieldProblems.some((p) => p.field === field);
+          const errId = (field) => `${item.id}-${field}-error`;
+          const a11y = (field) =>
+            bad(field) ? { 'aria-invalid': true, 'aria-describedby': errId(field) } : {};
 
           return (
             <Accordion.Item key={item.id} value={item.id} asChild>
@@ -397,9 +444,13 @@ export default function ReviewScreen() {
                     >
                       <span className="flex-1">
                         <span className="block text-sm font-medium">{item.name || '(unnamed item)'}</span>
-                        <span className="block text-xs text-slate-500">
-                          {assignmentSummaryText(item, assignment, payers.length)}
-                        </span>
+                        {showItemErrors && problemsById.has(item.id) ? (
+                          <span className="block text-xs text-red-700">Needs fixing</span>
+                        ) : (
+                          <span className="block text-xs text-slate-500">
+                            {assignmentSummaryText(item, assignment, payers.length)}
+                          </span>
+                        )}
                       </span>
                       <span className="text-sm font-semibold tabular-nums">{formatRM(item.line_total)}</span>
                     </motion.button>
@@ -418,12 +469,16 @@ export default function ReviewScreen() {
                         onChange={(e) => updateItemField(item.id, 'name', e.target.value)}
                         className="flex-1 rounded-md border-slate-300 text-sm min-h-[48px]"
                         aria-label="Item name"
+                        ref={(el) => registerFieldRef(item.id, 'name', el)}
+                        {...a11y('name')}
                       />
                       <select
                         value={item.category}
                         onChange={(e) => updateItemField(item.id, 'category', e.target.value)}
                         className="rounded-md border-slate-300 text-sm min-h-[48px]"
                         aria-label="Category"
+                        ref={(el) => registerFieldRef(item.id, 'category', el)}
+                        {...a11y('category')}
                       >
                         {CATEGORIES.map((c) => (
                           <option key={c} value={c}>
@@ -442,6 +497,8 @@ export default function ReviewScreen() {
                           value={item.qty}
                           onChange={(e) => updateItemField(item.id, 'qty', Number(e.target.value) || 0)}
                           className="w-full min-h-[48px]"
+                          ref={(el) => registerFieldRef(item.id, 'qty', el)}
+                          {...a11y('qty')}
                         />
                       </label>
                       <label className="space-y-1">
@@ -453,6 +510,8 @@ export default function ReviewScreen() {
                           value={item.unit_price}
                           onChange={(e) => updateItemField(item.id, 'unit_price', Number(e.target.value) || 0)}
                           className="w-full min-h-[48px]"
+                          ref={(el) => registerFieldRef(item.id, 'unit_price', el)}
+                          {...a11y('unit_price')}
                         />
                       </label>
                       <label className="space-y-1">
@@ -464,9 +523,20 @@ export default function ReviewScreen() {
                           value={item.line_total}
                           onChange={(e) => updateItemField(item.id, 'line_total', Number(e.target.value) || 0)}
                           className="w-full min-h-[48px]"
+                          ref={(el) => registerFieldRef(item.id, 'line_total', el)}
+                          {...a11y('line_total')}
                         />
                       </label>
                     </div>
+                    {fieldProblems.length > 0 && (
+                      <div className="rounded-md bg-red-50 border border-red-200 text-red-700 text-xs p-2 space-y-1">
+                        {fieldProblems.map((p) => (
+                          <p key={p.field} id={errId(p.field)}>
+                            {p.message}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => removeItem(item.id)}
@@ -710,6 +780,15 @@ export default function ReviewScreen() {
           Enter manually
         </button>
       </div>
+
+      {showItemErrors && itemProblems.length > 0 && (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3">
+          {itemProblems.length === 1
+            ? 'One item needs fixing before you can continue: '
+            : `${itemProblems.length} items need fixing before you can continue. First: `}
+          {itemProblems[0].problems[0].message}
+        </div>
+      )}
 
       {validationError && (
         <div role="alert" className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3">
