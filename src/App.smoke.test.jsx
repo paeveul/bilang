@@ -167,6 +167,7 @@ test('full creator path: landing -> capture -> parse -> review -> payment -> cre
   const submittedBody = JSON.parse(createCalls[0].options.body);
   assert.equal(submittedBody.totals.grand_total, PARSED_RECEIPT.grand_total);
   assert.equal(submittedBody.ownerPaymentHandle, 'DuitNow: 012-3456789 (Test Owner)');
+  assert.deepEqual(submittedBody.payers, ['Me'], 'the ordered payers list must be sent to the server');
 });
 
 test('opening the share link fresh (no prior app state — "a private window with no session") renders the payer view from the stored split alone', async () => {

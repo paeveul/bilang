@@ -27,7 +27,7 @@ export async function parseReceipt(base64Image, mimeType) {
 }
 
 /**
- * @param {object} payload - {items, assignments, totals, ownerPaymentHandle}
+ * @param {object} payload - {items, assignments, totals, payers, ownerPaymentHandle}
  * @returns {Promise<{id: string, url: string}>}
  */
 export async function createSplit(payload) {

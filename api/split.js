@@ -1,8 +1,9 @@
 // api/split.js — Vercel serverless function
 //
 // GET  ?id=<id>  -> read a split's public fields (backs the read-only payer view)
-// POST { items, assignments, totals, ownerPaymentHandle } -> create a split,
-//      returns { id, url }
+// POST { items, assignments, totals, payers, ownerPaymentHandle } -> create a
+//      split, returns { id, url }. The server recomputes totals.per_person from
+//      items + assignments + payers and stores its own figures.
 //
 // This is the only file that calls the data-access layer (api/_lib/supabase.js)
 // for operational data. It also fires the anonymised analytics insert (F7a)
@@ -14,6 +15,7 @@
 
 const { createSplit, getSplit, insertAnalyticsRows } = require('./_lib/supabase');
 const { generateSplitId, validateSplitCreateRequest } = require('./_lib/validate');
+const { recomputeSplitTotals } = require('./_lib/recompute');
 
 const RETENTION_DAYS = Number(process.env.RETENTION_DAYS || 30);
 
@@ -62,8 +64,23 @@ async function handlePost(req, res) {
     return;
   }
 
-  const { items, assignments, totals, ownerPaymentHandle } = req.body;
+  const { items, assignments, ownerPaymentHandle } = req.body;
   const id = generateSplitId();
+
+  const recomputed = recomputeSplitTotals(req.body);
+  const totals = recomputed.totals;
+  if (recomputed.source === 'per_person') {
+    console.log(`split ${id}: payers not sent, derived from totals.per_person`);
+  } else if (recomputed.source === 'none') {
+    console.log(`split ${id}: no payers and no totals.per_person, stored client totals unchanged`);
+  } else if (recomputed.source === 'error') {
+    console.error(`split ${id}: totals recomputation failed, stored client totals unchanged:`, recomputed.error);
+  }
+  if (recomputed.mismatch) {
+    console.warn(
+      `split ${id}: totals mismatch (client vs server, cents, by payer position): ${JSON.stringify(recomputed.mismatch)}`
+    );
+  }
   const expiresAt = new Date(Date.now() + RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   try {

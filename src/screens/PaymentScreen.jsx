@@ -9,7 +9,7 @@
 // one place /api/split is called from the creator's side of the app.
 import { useState } from 'react';
 import { createSplit } from '../../js/api-client.js';
-import { computeTotals } from '../../js/totals.js';
+import { buildSplitPayload } from './split-payload.js';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
 
 export default function PaymentScreen() {
@@ -29,24 +29,10 @@ export default function PaymentScreen() {
 
     goToScreen('creating');
 
-    const { perPerson } = computeTotals(parsed.items, assignments, parsed, payers);
-    const totalsPayload = {
-      subtotal: parsed.subtotal,
-      service_charge: parsed.service_charge,
-      tax: parsed.tax,
-      grand_total: parsed.grand_total,
-      per_person: Object.fromEntries(
-        Object.entries(perPerson).map(([name, p]) => [name, Math.round(p.totalCents) / 100])
-      ),
-    };
-
     try {
-      const { url } = await createSplit({
-        items: parsed.items,
-        assignments,
-        totals: totalsPayload,
-        ownerPaymentHandle: trimmed,
-      });
+      const { url } = await createSplit(
+        buildSplitPayload({ parsed, payers, assignments, ownerPaymentHandle: trimmed })
+      );
       setShareUrl(`${window.location.origin}${url}`);
       goToScreen('share');
     } catch (err) {

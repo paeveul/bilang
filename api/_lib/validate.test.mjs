@@ -127,3 +127,21 @@ test('validateParsedReceipt: rejects a non-finite top-level total (NaN/Infinity)
   const parsed = validParsedReceipt({ grand_total: Infinity });
   assert.match(validateParsedReceipt(parsed), /totals/i);
 });
+
+test('validateSplitCreateRequest: payers is optional', () => {
+  assert.equal(validateSplitCreateRequest(validSplitBody()), null);
+});
+
+test('validateSplitCreateRequest: accepts a valid payers list', () => {
+  assert.equal(validateSplitCreateRequest(validSplitBody({ payers: ['Alex', 'Bea'] })), null);
+});
+
+test('validateSplitCreateRequest: rejects invalid payers', () => {
+  for (const payers of ['Alex', [], ['Alex', ''], ['Alex', 'Alex'], ['Alex', 1], [null], {}, null]) {
+    assert.equal(
+      validateSplitCreateRequest(validSplitBody({ payers })),
+      'Invalid payers list',
+      JSON.stringify(payers)
+    );
+  }
+});

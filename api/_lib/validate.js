@@ -86,6 +86,16 @@ function validateSplitCreateRequest(body) {
   if (!body.totals || typeof body.totals !== 'object' || Array.isArray(body.totals)) {
     return 'Missing or invalid totals';
   }
+  if (body.payers !== undefined) {
+    if (
+      !Array.isArray(body.payers) ||
+      body.payers.length === 0 ||
+      body.payers.some((name) => typeof name !== 'string' || name.length === 0) ||
+      new Set(body.payers).size !== body.payers.length
+    ) {
+      return 'Invalid payers list';
+    }
+  }
   if (typeof body.ownerPaymentHandle !== 'string' || body.ownerPaymentHandle.trim().length === 0) {
     return "Missing the bill owner's payment details";
   }
