@@ -70,6 +70,22 @@ function centsToPercent(cents, lineTotalRM) {
 }
 
 /**
+ * Per-person cents for a manual assignment. Accepts the explicit
+ * `{mode:'manual', amounts:{name: cents}}` shape, or the app's stored state
+ * shape `{mode:'manual', manual:{values:{name:{cents}}}}` that the reducer
+ * builds and the server stores.
+ */
+function manualAmountsOf(assignment) {
+  if (assignment.amounts) return assignment.amounts;
+  const values = (assignment.manual && assignment.manual.values) || {};
+  const amounts = {};
+  for (const name of Object.keys(values)) {
+    amounts[name] = values[name] && values[name].cents;
+  }
+  return amounts;
+}
+
+/**
  * @typedef {object} Item
  * @property {string} id
  * @property {string} name
@@ -121,7 +137,7 @@ function computeTotals(items, assignments, billTotals, payers) {
     // equal-split branch below, which is byte-for-byte the same code that
     // ran before this mode existed.
     if (assignment && !Array.isArray(assignment) && assignment.mode === 'manual') {
-      const amounts = assignment.amounts || {};
+      const amounts = manualAmountsOf(assignment);
       let itemSumCents = 0;
       for (const name of Object.keys(amounts)) {
         if (!perPerson[name]) continue; // ignore amounts for an unknown/removed payer
