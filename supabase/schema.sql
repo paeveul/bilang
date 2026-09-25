@@ -20,6 +20,24 @@ create table if not exists splits (
   expires_at            timestamptz not null          -- retention window; see RETENTION_DAYS in .env.example
 );
 
+-- Item 24 (payer item-claiming) — additive columns on `splits`.
+-- Idempotent: safe to re-run, and safe on a database that already holds rows
+-- (existing splits get payers = NULL and version = 0; nothing is backfilled,
+-- splits expire in RETENTION_DAYS anyway). Apply by hand like the rest of this
+-- file. Nothing in the app reads or writes these columns until the Item 24
+-- code steps land, so applying this early breaks nothing.
+--   payers  — ordered roster of payer names (jsonb array of strings). NULL on
+--             splits created before this column existed; those cannot be
+--             claimed against.
+--   version — compare-and-swap counter, bumped by every successful claim write.
+alter table splits add column if not exists payers  jsonb;
+alter table splits add column if not exists version integer not null default 0;
+--
+-- Rollback (manual; destroys the stored rosters / counters, so only before
+-- claiming ships or if the data is disposable):
+--   alter table splits drop column if exists version;
+--   alter table splits drop column if exists payers;
+
 -- Speeds up the future MVP-3 cleanup job's `WHERE expires_at < now()` sweep.
 create index if not exists splits_expires_at_idx on splits (expires_at);
 
