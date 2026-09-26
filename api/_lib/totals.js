@@ -114,6 +114,7 @@ function manualAmountsOf(assignment) {
  * @returns {{
  *   perPerson: Object<string, {itemsCents:number, taxCents:number, serviceCents:number, totalCents:number}>,
  *   itemizedSubtotalCents: number,
+ *   unclaimed: {itemsCents:number, taxCents:number, serviceCents:number, totalCents:number},
  *   reconciliation: {itemizedSubtotalCents:number, statedSubtotalCents:number, matches:boolean}
  * }}
  */
@@ -124,6 +125,7 @@ function computeTotals(items, assignments, billTotals, payers) {
   }
 
   let itemizedSubtotalCents = 0;
+  let unclaimedItemsCents = 0;
 
   for (const item of items) {
     const assignment = assignments[item.id];
@@ -152,6 +154,9 @@ function computeTotals(items, assignments, billTotals, payers) {
       // skipped the submit-time block) is represented honestly: the money
       // that exists in perPerson is exactly the money counted here, always.
       itemizedSubtotalCents += itemSumCents;
+      // A dish is unclaimed only if it has no allocation at all. The leftover
+      // on a partly allocated dish is neither charged nor counted as unclaimed.
+      if (itemSumCents === 0) unclaimedItemsCents += lineCents;
       continue;
     }
 
@@ -161,7 +166,10 @@ function computeTotals(items, assignments, billTotals, payers) {
     // mode existed.
     const names = Array.isArray(assignment) ? assignment : assignment?.equal;
     const assignedTo = (names || []).filter((name) => perPerson[name]);
-    if (assignedTo.length === 0) continue;
+    if (assignedTo.length === 0) {
+      unclaimedItemsCents += lineCents;
+      continue;
+    }
 
     itemizedSubtotalCents += lineCents;
 
@@ -180,8 +188,26 @@ function computeTotals(items, assignments, billTotals, payers) {
     });
   }
 
-  const taxCents = toCents(billTotals.tax);
-  const serviceCents = toCents(billTotals.service_charge);
+  const billTaxCents = toCents(billTotals.tax);
+  const billServiceCents = toCents(billTotals.service_charge);
+
+  // Tax and service are computed only on claimed items. When some items are
+  // unclaimed, the bill's tax and service are first divided between the claimed
+  // and the unclaimed items by their share of the itemized amount; only the
+  // claimed part is charged to people. With nothing unclaimed the whole amount
+  // goes to the claimed items, exactly as before.
+  let taxCents = billTaxCents;
+  let serviceCents = billServiceCents;
+  let unclaimedTaxCents = 0;
+  let unclaimedServiceCents = 0;
+  if (unclaimedItemsCents > 0) {
+    const basisCents = itemizedSubtotalCents + unclaimedItemsCents;
+    taxCents = itemizedSubtotalCents > 0 ? Math.round((billTaxCents * itemizedSubtotalCents) / basisCents) : 0;
+    serviceCents =
+      itemizedSubtotalCents > 0 ? Math.round((billServiceCents * itemizedSubtotalCents) / basisCents) : 0;
+    unclaimedTaxCents = billTaxCents - taxCents;
+    unclaimedServiceCents = billServiceCents - serviceCents;
+  }
 
   if (itemizedSubtotalCents > 0) {
     // Apportion tax + service charge pro-rata by each payer's share of the
@@ -217,6 +243,12 @@ function computeTotals(items, assignments, billTotals, payers) {
   return {
     perPerson,
     itemizedSubtotalCents,
+    unclaimed: {
+      itemsCents: unclaimedItemsCents,
+      taxCents: unclaimedTaxCents,
+      serviceCents: unclaimedServiceCents,
+      totalCents: unclaimedItemsCents + unclaimedTaxCents + unclaimedServiceCents,
+    },
     reconciliation: {
       itemizedSubtotalCents,
       statedSubtotalCents,

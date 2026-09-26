@@ -138,10 +138,12 @@ test('edge case — item assigned to nobody AND a payer with zero items gets 0 t
   assert.equal(result.perPerson.B.taxCents, 0);
   assert.equal(result.perPerson.B.serviceCents, 0);
   assert.equal(result.perPerson.B.totalCents, 0);
-  // A gets the full tax + service since A is the only payer with items.
-  assert.equal(result.perPerson.A.taxCents, 100);
-  assert.equal(result.perPerson.A.serviceCents, 200);
-  assert.equal(sumPerPersonTotals(result.perPerson), 2000 + 100 + 200);
+  // A is the only payer with items, so A carries the tax + service on A's own
+  // item; the unclaimed item carries its own share (Item 24 Step 2 rule).
+  assert.equal(result.perPerson.A.taxCents, 80);
+  assert.equal(result.perPerson.A.serviceCents, 160);
+  assert.equal(sumPerPersonTotals(result.perPerson), 2000 + 80 + 160);
+  assert.equal(result.unclaimed.totalCents, 500 + 20 + 40);
 });
 
 test('helper functions — toCents, fromCents, formatRM basic behaviour', () => {
@@ -335,4 +337,139 @@ test('formatRMLocked — Tony\'s locked-copy spacing ("RM 1.00"), distinct from 
   assert.equal(formatRMLocked(1), 'RM 1.00');
   assert.equal(formatRMLocked(0.3), 'RM 0.30');
   assert.equal(formatRM(1), 'RM1.00'); // unchanged, still used everywhere else in the app
+});
+
+// ---------------------------------------------------------------------------
+// Item 24 Step 2 — items nobody has claimed yet. They are left unassigned and
+// charged to no one; `unclaimed` reports them (with their share of tax and
+// service) as their own figure, so per-person totals plus `unclaimed` always
+// add up to the whole bill.
+// ---------------------------------------------------------------------------
+
+const UC_ITEMS = [
+  { id: 'i1', name: 'Rice', qty: 1, unit_price: 10, line_total: 10 },
+  { id: 'i2', name: 'Noodles', qty: 1, unit_price: 20, line_total: 20 },
+  { id: 'i3', name: 'Satay', qty: 1, unit_price: 30, line_total: 30 },
+];
+const UC_BILL = { subtotal: 60, service_charge: 6, tax: 6, grand_total: 72 };
+const UC_GRAND_CENTS = 7200;
+
+function ucTie(result, expectedCents = UC_GRAND_CENTS) {
+  assert.equal(sumPerPersonTotals(result.perPerson) + result.unclaimed.totalCents, expectedCents);
+}
+
+test('unclaimed: one payer, one unclaimed item — nobody charged for it, whole bill ties out', () => {
+  const r = computeTotals(UC_ITEMS, { i1: ['A'], i2: ['A'], i3: [] }, UC_BILL, ['A']);
+  assert.equal(r.perPerson.A.itemsCents, 3000);
+  assert.equal(r.perPerson.A.taxCents, 300);
+  assert.equal(r.perPerson.A.serviceCents, 300);
+  assert.equal(r.unclaimed.itemsCents, 3000);
+  assert.equal(r.unclaimed.taxCents, 300);
+  assert.equal(r.unclaimed.serviceCents, 300);
+  assert.equal(r.unclaimed.totalCents, 3600);
+  ucTie(r);
+});
+
+test('unclaimed: two and three payers, unclaimed item absent from assignments or empty', () => {
+  for (const payers of [['A', 'B'], ['A', 'B', 'C']]) {
+    for (const i3 of [undefined, [], { mode: 'equal', equal: [] }]) {
+      const assignments = { i1: [...payers], i2: [payers[0]] };
+      if (i3 !== undefined) assignments.i3 = i3;
+      const r = computeTotals(UC_ITEMS, assignments, UC_BILL, payers);
+      assert.equal(r.unclaimed.itemsCents, 3000);
+      assert.equal(r.unclaimed.totalCents, 3600);
+      assert.equal(sumPerPersonTotals(r.perPerson), 3600);
+      ucTie(r);
+    }
+  }
+});
+
+test('unclaimed: names outside the roster count as unclaimed', () => {
+  const r = computeTotals(UC_ITEMS, { i1: ['A'], i2: ['A'], i3: ['Ghost'] }, UC_BILL, ['A']);
+  assert.equal(r.unclaimed.itemsCents, 3000);
+  ucTie(r);
+});
+
+test('unclaimed: a claim moves the cost from unclaimed to the claimer, tie-out holds at every step', () => {
+  const payers = ['A', 'B', 'C'];
+  const steps = [
+    { assignments: {}, unclaimedItems: 6000 },
+    { assignments: { i1: ['A'] }, unclaimedItems: 5000 },
+    { assignments: { i1: ['A'], i2: ['B', 'C'] }, unclaimedItems: 3000 },
+    { assignments: { i1: ['A'], i2: ['B', 'C'], i3: ['C'] }, unclaimedItems: 0 },
+  ];
+  let previousUnclaimed = Infinity;
+  for (const step of steps) {
+    const r = computeTotals(UC_ITEMS, step.assignments, UC_BILL, payers);
+    assert.equal(r.unclaimed.itemsCents, step.unclaimedItems);
+    assert.ok(r.unclaimed.totalCents < previousUnclaimed);
+    previousUnclaimed = r.unclaimed.totalCents;
+    ucTie(r);
+  }
+});
+
+test('unclaimed: the claimer picks up the item plus its share of tax and service', () => {
+  const before = computeTotals(UC_ITEMS, { i1: ['A'], i2: ['A'] }, UC_BILL, ['A']);
+  const after = computeTotals(UC_ITEMS, { i1: ['A'], i2: ['A'], i3: ['A'] }, UC_BILL, ['A']);
+  assert.equal(after.perPerson.A.totalCents - before.perPerson.A.totalCents, before.unclaimed.totalCents);
+  assert.equal(after.perPerson.A.totalCents, 7200);
+  assert.equal(after.unclaimed.totalCents, 0);
+});
+
+test('unclaimed: nothing claimed gives everyone 0 and unclaimed equals the grand total', () => {
+  const r = computeTotals(UC_ITEMS, {}, UC_BILL, ['A', 'B']);
+  for (const name of ['A', 'B']) {
+    assert.deepEqual(r.perPerson[name], { itemsCents: 0, taxCents: 0, serviceCents: 0, totalCents: 0 });
+  }
+  assert.equal(r.unclaimed.totalCents, UC_GRAND_CENTS);
+  assert.equal(r.unclaimed.itemsCents, 6000);
+});
+
+test('unclaimed: an all-assigned bill reports 0 and every figure is as before', () => {
+  const r = computeTotals(UC_ITEMS, { i1: ['A'], i2: ['B'], i3: ['A', 'B'] }, UC_BILL, ['A', 'B']);
+  assert.deepEqual(r.unclaimed, { itemsCents: 0, taxCents: 0, serviceCents: 0, totalCents: 0 });
+  ucTie(r);
+});
+
+test('unclaimed: an odd cent of tax is never lost or invented', () => {
+  const bill = { subtotal: 60, service_charge: 0.01, tax: 0.01, grand_total: 60.02 };
+  for (const assignments of [{ i1: ['A'] }, { i1: ['A'], i2: ['B'] }]) {
+    const r = computeTotals(UC_ITEMS, assignments, bill, ['A', 'B']);
+    ucTie(r, 6002);
+  }
+});
+
+test('unclaimed: manual mode — a partly allocated dish is locked, its leftover is uncharged and not counted', () => {
+  const assignments = {
+    i1: { mode: 'manual', manual: { unit: 'rm', values: { A: { text: '4', cents: 400 } } } }, // 600 left over
+    i2: ['A'],
+    i3: ['B'],
+  };
+  const r = computeTotals(UC_ITEMS, assignments, UC_BILL, ['A', 'B']);
+  assert.equal(r.perPerson.A.itemsCents, 400 + 2000);
+  assert.equal(r.perPerson.B.itemsCents, 3000);
+  assert.equal(r.unclaimed.itemsCents, 0);
+  assert.equal(r.unclaimed.totalCents, 0);
+  // The leftover 600 appears nowhere: the rest of the bill is 7200 - 600.
+  ucTie(r, UC_GRAND_CENTS - 600);
+});
+
+test('unclaimed: manual mode with no allocation at all is unclaimed; the explicit amounts shape too', () => {
+  const r1 = computeTotals(
+    UC_ITEMS,
+    { i1: { mode: 'manual', manual: { unit: 'rm', values: {} } }, i2: ['A'], i3: ['A'] },
+    UC_BILL,
+    ['A']
+  );
+  assert.equal(r1.unclaimed.itemsCents, 1000);
+  ucTie(r1);
+
+  const r2 = computeTotals(
+    UC_ITEMS,
+    { i1: { mode: 'manual', amounts: { A: 1000 } }, i2: ['A'], i3: { mode: 'manual', amounts: {} } },
+    UC_BILL,
+    ['A']
+  );
+  assert.equal(r2.unclaimed.itemsCents, 3000);
+  ucTie(r2);
 });

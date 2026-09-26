@@ -102,3 +102,20 @@ test('a computation failure never throws: client totals kept', () => {
   assert.equal(r.source, 'error');
   assert.equal(r.totals, b.totals);
 });
+
+test('unclaimed items: stored totals carry unclaimed and unclaimed_items; nobody charged for them', () => {
+  const b = body({ assignments: { i1: ['Ali', 'Bea'] } }); // i2 (4.00) nobody yet
+  const r = recomputeSplitTotals(b);
+  assert.equal(r.totals.unclaimed_items, 4);
+  assert.equal(r.totals.unclaimed, 4.64);
+  const sum = Object.values(r.totals.per_person).reduce((a, c) => a + c, 0);
+  assert.equal(Math.round((sum + r.totals.unclaimed) * 100), 1624);
+});
+
+test('all-assigned bill: unclaimed is 0 and per-person figures are unchanged', () => {
+  const b = body();
+  const r = recomputeSplitTotals(b);
+  assert.equal(r.totals.unclaimed, 0);
+  assert.equal(r.totals.unclaimed_items, 0);
+  assert.deepEqual(r.totals.per_person, honestPerPerson(b));
+});

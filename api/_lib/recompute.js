@@ -67,13 +67,18 @@ function recomputeSplitTotals(body) {
     return { totals: body.totals, recomputed: false, source, mismatch: null };
   }
   try {
-    const { perPerson } = computeTotals(body.items, body.assignments, body.totals, payers);
+    const { perPerson, unclaimed } = computeTotals(body.items, body.assignments, body.totals, payers);
     const serverPerPerson = {};
     for (const name of payers) serverPerPerson[name] = fromCents(perPerson[name].totalCents);
 
     const { diffs, extraClient } = diffPerPerson(payers, perPerson, body.totals.per_person);
     return {
-      totals: { ...body.totals, per_person: serverPerPerson },
+      totals: {
+        ...body.totals,
+        per_person: serverPerPerson,
+        unclaimed: fromCents(unclaimed.totalCents),
+        unclaimed_items: fromCents(unclaimed.itemsCents),
+      },
       recomputed: true,
       source,
       mismatch: diffs.length > 0 || extraClient > 0 ? { diffs, extraClient } : null,
