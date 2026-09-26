@@ -145,3 +145,27 @@ test('validateSplitCreateRequest: rejects invalid payers', () => {
     );
   }
 });
+
+test('payers: names are trimmed, 1-20 characters', () => {
+  const ok = (payers) => validateSplitCreateRequest(validSplitBody({ payers }));
+  assert.equal(ok(['a']), null);
+  assert.equal(ok(['x'.repeat(20)]), null);
+  assert.equal(ok(['  Bea  ']), null);
+  assert.equal(ok(['  ' + 'x'.repeat(20) + '  ']), null);
+  assert.equal(ok(['x'.repeat(21)]), 'Invalid payers list');
+  assert.equal(ok(['   ']), 'Invalid payers list');
+  assert.equal(ok(['Alex', '  ']), 'Invalid payers list');
+});
+
+test('payers: unique case-insensitively, after trimming', () => {
+  const bad = (payers) => validateSplitCreateRequest(validSplitBody({ payers }));
+  assert.equal(bad(['Alex', 'alex']), 'Invalid payers list');
+  assert.equal(bad(['Alex', ' ALEX ']), 'Invalid payers list');
+  assert.equal(bad(['Alex', 'Alexa']), null);
+});
+
+test('payers: hidden ceiling of 200 people, plain rejection above it', () => {
+  const roster = (n) => Array.from({ length: n }, (_, i) => `P${i}`);
+  assert.equal(validateSplitCreateRequest(validSplitBody({ payers: roster(200) })), null);
+  assert.equal(validateSplitCreateRequest(validSplitBody({ payers: roster(201) })), 'Invalid payers list');
+});

@@ -10,6 +10,8 @@ const crypto = require('crypto');
 const MAX_IMAGE_BASE64_CHARS = 8_000_000; // ~6MB raw image, generous for a phone photo
 const MAX_ITEMS = 100;
 const MAX_STRING_LEN = 200;
+const MAX_PAYER_NAME_LEN = 20;
+const MAX_PAYERS = 200;
 
 // Must match RECEIPT_TOOL's input_schema category enum in api/_lib/anthropic.js
 // and the <select> options in js/app.js — three independent copies of the same
@@ -37,6 +39,26 @@ function generateSplitId() {
     id += ID_ALPHABET[bytes[i] % ID_ALPHABET.length];
   }
   return id;
+}
+
+/**
+ * A roster is a non-empty array of at most MAX_PAYERS names. Each name is 1-20
+ * characters once trimmed, and no two names match case-insensitively (after
+ * trimming). Names are checked, never rewritten, so they keep matching the
+ * keys the client used in `assignments`.
+ */
+function isValidPayersList(payers) {
+  if (!Array.isArray(payers) || payers.length === 0 || payers.length > MAX_PAYERS) return false;
+  const seen = new Set();
+  for (const name of payers) {
+    if (typeof name !== 'string') return false;
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || trimmed.length > MAX_PAYER_NAME_LEN) return false;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+  }
+  return true;
 }
 
 function validateParseRequest(body) {
@@ -87,12 +109,7 @@ function validateSplitCreateRequest(body) {
     return 'Missing or invalid totals';
   }
   if (body.payers !== undefined) {
-    if (
-      !Array.isArray(body.payers) ||
-      body.payers.length === 0 ||
-      body.payers.some((name) => typeof name !== 'string' || name.length === 0) ||
-      new Set(body.payers).size !== body.payers.length
-    ) {
+    if (!isValidPayersList(body.payers)) {
       return 'Invalid payers list';
     }
   }
@@ -161,4 +178,7 @@ module.exports = {
   validateParseRequest,
   validateSplitCreateRequest,
   validateParsedReceipt,
+  isValidPayersList,
+  MAX_PAYERS,
+  MAX_PAYER_NAME_LEN,
 };

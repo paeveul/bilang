@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const supabasePath = require.resolve('./_lib/supabase.js');
 
 const stored = [];
+let splitRow = null;
 require.cache[supabasePath] = {
   id: supabasePath,
   filename: supabasePath,
@@ -17,7 +18,7 @@ require.cache[supabasePath] = {
     createSplit: async (row) => {
       stored.push(row);
     },
-    getSplit: async () => null,
+    getSplit: async () => splitRow,
     insertAnalyticsRows: async () => {},
   },
 };
@@ -73,6 +74,7 @@ async function post(body) {
 
 beforeEach(() => {
   stored.length = 0;
+  splitRow = null;
 });
 
 test('honest request: stored, 201, no mismatch line', async () => {
@@ -120,4 +122,44 @@ test('invalid payers are rejected with 400 and nothing is stored', async () => {
 test('a totals mismatch never rejects the request', async () => {
   const { res } = await post(postBody({ totals: { ...postBody().totals, per_person: {} } }));
   assert.equal(res.statusCode, 201);
+});
+
+test('payers are passed to storage as sent', async () => {
+  const { res } = await post(postBody());
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(stored[0].payers, ['Ali', 'Bea']);
+});
+
+test('payers absent: storage receives no payers', async () => {
+  const b = postBody();
+  delete b.payers;
+  await post(b);
+  assert.equal(stored[0].payers, undefined);
+});
+
+test('POST rejects blank, over-long, case-duplicate and over-200 rosters with 400', async () => {
+  const many = Array.from({ length: 201 }, (_, i) => `P${i}`);
+  for (const payers of [['Ali', ' '], ['x'.repeat(21)], ['Ali', 'ALI'], many]) {
+    const { res } = await post(postBody({ payers }));
+    assert.equal(res.statusCode, 400);
+  }
+  assert.equal(stored.length, 0);
+});
+
+test('GET returns payers and version; a row without them returns null and 0', async () => {
+  const base = {
+    id: 'abc', items: [], assignments: {}, totals: {}, owner_payment_handle: 'h', created_at: 't',
+  };
+  splitRow = { ...base, payers: ['Ali', 'Bea'], version: 3 };
+  let res = fakeRes();
+  await handler({ method: 'GET', query: { id: 'abc' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body.payers, ['Ali', 'Bea']);
+  assert.equal(res.body.version, 3);
+
+  splitRow = { ...base };
+  res = fakeRes();
+  await handler({ method: 'GET', query: { id: 'abc' } }, res);
+  assert.equal(res.body.payers, null);
+  assert.equal(res.body.version, 0);
 });

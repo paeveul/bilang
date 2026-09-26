@@ -48,6 +48,8 @@ async function handleGet(req, res) {
       items: split.items,
       assignments: split.assignments,
       totals: split.totals,
+      payers: split.payers ?? null,
+      version: split.version ?? 0,
       ownerPaymentHandle: split.owner_payment_handle,
       createdAt: split.created_at,
     });
@@ -64,7 +66,7 @@ async function handlePost(req, res) {
     return;
   }
 
-  const { items, assignments, ownerPaymentHandle } = req.body;
+  const { items, assignments, payers, ownerPaymentHandle } = req.body;
   const id = generateSplitId();
 
   const recomputed = recomputeSplitTotals(req.body);
@@ -84,7 +86,7 @@ async function handlePost(req, res) {
   const expiresAt = new Date(Date.now() + RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   try {
-    await createSplit({ id, items, assignments, totals, ownerPaymentHandle, expiresAt });
+    await createSplit({ id, items, assignments, totals, payers, ownerPaymentHandle, expiresAt });
 
     // Roadmap F7(a) — anonymised analytics capture, MVP-1 scope. Fire-and-
     // forget, alongside (not instead of) the operational persist above. No
