@@ -1,6 +1,9 @@
 // api/split.js — Vercel serverless function
 //
 // GET  ?id=<id>  -> read a split's public fields (backs the read-only payer view)
+// PATCH ?id=<id> { action, itemId, payer, sharedWith? } -> claim or un-claim one
+//      item for a payer on the split's roster (compare-and-swap on
+//      splits.version; see handlePatch).
 // POST { items, assignments, totals, payers, ownerPaymentHandle } -> create a
 //      split, returns { id, url }. The server recomputes totals.per_person from
 //      items + assignments + payers and stores its own figures.
@@ -10,18 +13,41 @@
 // alongside the operational persist, per the roadmap — a second, genuinely
 // de-identified dataset, not an expansion of the `splits` table.
 //
-// MVP-1 has no edit/re-open path (that's MVP-2/C1 scope) — splits are
-// read-only after creation, so there is no admin/edit token to protect here.
+// MVP-1 has no creator edit/re-open path (that's MVP-2/C1 scope). The only
+// write after creation is a payer claiming or un-claiming one item (PATCH),
+// which is anonymous by design (Item 24 C7/C13): the payer picks a name from
+// the stored roster and nothing more is checked.
 
-const { createSplit, getSplit, insertAnalyticsRows } = require('./_lib/supabase');
-const { generateSplitId, validateSplitCreateRequest } = require('./_lib/validate');
+const { createSplit, getSplit, claimSplitItem, insertAnalyticsRows } = require('./_lib/supabase');
+const {
+  generateSplitId,
+  validateSplitCreateRequest,
+  validateClaimRequest,
+  resolveRosterName,
+} = require('./_lib/validate');
+const { decideClaim } = require('./_lib/claim');
 const { recomputeSplitTotals } = require('./_lib/recompute');
 
 const RETENTION_DAYS = Number(process.env.RETENTION_DAYS || 30);
+const MAX_CLAIM_ATTEMPTS = 3;
 
+// Polling limiter slot (Item 24 Step 5). GET and PATCH share one limiter,
+// api/_lib/ratelimit-poll.js, which does not exist yet: until Step 5 replaces
+// this body, nothing is ever limited and the 429 branch below cannot fire.
+// Must resolve true when the request should be refused.
+async function pollRateLimited(req) {
+  return false;
+}
+
+// Check order: method dispatch -> (GET/PATCH) poll limiter -> body/query
+// validation -> data access. POST keeps its own order inside handlePost.
 module.exports = async function handler(req, res) {
-  if (req.method === 'GET') {
-    return handleGet(req, res);
+  if (req.method === 'GET' || req.method === 'PATCH') {
+    if (await pollRateLimited(req)) {
+      res.status(429).json({ code: 'rate_limited' });
+      return;
+    }
+    return req.method === 'GET' ? handleGet(req, res) : handlePatch(req, res);
   }
   if (req.method === 'POST') {
     return handlePost(req, res);
@@ -104,5 +130,81 @@ async function handlePost(req, res) {
   } catch (err) {
     console.error('api/split.js POST error:', err);
     res.status(500).json({ error: 'Could not create this split. Please try again.' });
+  }
+}
+
+/**
+ * Claim or un-claim one item. Read the row, decide in api/_lib/claim.js, then
+ * write with claimSplitItem, which applies only if `version` has not moved
+ * since the read. A lost race is re-read and re-decided (max 3 attempts); if
+ * the item was taken meanwhile the re-decision is a calm 409. Stored `totals`
+ * are returned as stored: recomputing them inside this write is Item 21
+ * Step 4, which lands directly after this item.
+ */
+async function handlePatch(req, res) {
+  const id = String(req.query.id || '').trim();
+  if (!id) {
+    res.status(400).json({ error: 'Missing id' });
+    return;
+  }
+  const shapeError = validateClaimRequest(req.body);
+  if (shapeError) {
+    res.status(400).json({ error: shapeError });
+    return;
+  }
+
+  try {
+    let claim = null;
+    for (let attempt = 1; attempt <= MAX_CLAIM_ATTEMPTS; attempt += 1) {
+      const split = await getSplit(id);
+      if (!split) {
+        res.status(404).json({ error: 'This split was not found, or has expired.' });
+        return;
+      }
+      if (!Array.isArray(split.payers) || typeof split.version !== 'number') {
+        res.status(409).json({ code: 'claiming_unavailable' });
+        return;
+      }
+      if (!claim) {
+        // Items and roster never change after creation, so this runs once.
+        const error = validateClaimRequest(req.body, split);
+        if (error) {
+          res.status(400).json({ error });
+          return;
+        }
+        const named = [req.body.payer, ...(req.body.sharedWith || [])];
+        claim = {
+          action: req.body.action,
+          itemId: req.body.itemId,
+          names: named.map((name) => resolveRosterName(split.payers, name)),
+        };
+      }
+
+      const current = { assignments: split.assignments, totals: split.totals, version: split.version };
+      const decision = decideClaim(split, claim);
+      if (decision.outcome === 'unchanged') {
+        res.status(200).json(current);
+        return;
+      }
+      if (decision.outcome === 'already_claimed') {
+        res.status(409).json({ code: 'already_claimed', ...current });
+        return;
+      }
+      if (decision.outcome === 'not_your_claim') {
+        res.status(403).json({ code: 'not_your_claim' });
+        return;
+      }
+
+      const row = await claimSplitItem(id, split.version, decision.assignments);
+      if (row) {
+        res.status(200).json({ assignments: row.assignments, totals: row.totals, version: row.version });
+        return;
+      }
+      // Lost the race: the version moved. Loop to re-read and re-decide.
+    }
+    res.status(503).json({ code: 'busy' });
+  } catch (err) {
+    console.error('api/split.js PATCH error:', err);
+    res.status(500).json({ error: 'Could not save this claim. Please try again.' });
   }
 }
