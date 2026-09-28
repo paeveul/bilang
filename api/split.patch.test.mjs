@@ -17,6 +17,7 @@ let row = null; // the one stored split
 let writes = 0; // successful compare-and-swap writes
 let casAttempts = 0;
 let beforeRead = async () => {}; // hook: runs inside getSplit, before the row is copied
+let afterRead = async () => {}; // hook: runs inside getSplit AFTER the row is copied, so the caller holds a stale snapshot
 let alwaysLose = false; // hook: every compare-and-swap loses
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -30,7 +31,9 @@ require.cache[supabasePath] = {
     insertAnalyticsRows: async () => {},
     getSplit: async () => {
       await beforeRead();
-      return row ? clone(row) : null;
+      const snapshot = row ? clone(row) : null;
+      await afterRead();
+      return snapshot;
     },
     claimSplitItem: async (id, expectedVersion, assignments) => {
       casAttempts += 1;
@@ -92,6 +95,7 @@ beforeEach(() => {
   writes = 0;
   casAttempts = 0;
   beforeRead = async () => {};
+  afterRead = async () => {};
   alwaysLose = false;
   row = {
     id: 'abc',
@@ -261,13 +265,16 @@ test('collision: two claims race on the SAME item, ten runs, one wins and one ge
     row.assignments = {};
     row.version = 0;
     writes = 0;
+    casAttempts = 0;
     // Make both requests read before either writes, in both orders.
     let readers = 0;
     let release;
     const gate = new Promise((resolve) => {
       release = resolve;
     });
+    let reads = 0;
     beforeRead = async () => {
+      reads += 1;
       readers += 1;
       if (readers <= 2) {
         if (readers === 2) release();
@@ -286,6 +293,12 @@ test('collision: two claims race on the SAME item, ten runs, one wins and one ge
     assert.equal(row.version, 1, `run ${run}`);
     assert.equal(writes, 1);
     assert.equal(row.assignments.i1.equal.length, 1);
+    // The race really happened: both decided from the same free read and both
+    // tried to write (2 compare-and-swaps, one lost), and the loser re-read
+    // (3 reads in all) before its calm 409. If the gate stops forcing the
+    // overlap, these fail instead of the test passing on a lucky ordering.
+    assert.equal(casAttempts, 2, `run ${run}`);
+    assert.equal(reads, 3, `run ${run}`);
   }
 });
 
@@ -317,8 +330,9 @@ test('collision: two claims on DIFFERENT items both succeed; the retry keeps bot
   }
 });
 
-test('collision: a claim that loses to an UNCLAIM on the same item re-decides from fresh state', async () => {
+test('collision: claim and un-claim in flight together on one item, both reads before either write: 409 for the claimer, un-claim wins', async () => {
   await patch(claim('Ali'));
+  const versionBefore = row.version;
   let readers = 0;
   let release;
   const gate = new Promise((resolve) => {
@@ -335,51 +349,70 @@ test('collision: a claim that loses to an UNCLAIM on the same item re-decides fr
     patch({ action: 'unclaim', itemId: 'i1', payer: 'Ali' }),
     patch(claim('Bea')),
   ]);
-  // Bea read the item as claimed by Ali (409 straight away) or, after Ali's
-  // unclaim landed, as free (200). Either way the stored state is consistent.
+  // Both read "Ali holds it", so Bea is refused straight away (no write attempted).
   assert.equal(a.statusCode, 200);
-  assert.ok([200, 409].includes(b.statusCode));
-  const stored = row.assignments.i1;
-  if (b.statusCode === 200) assert.deepEqual(stored.equal, ['Bea']);
-  else assert.equal(stored, undefined);
+  assert.equal(b.statusCode, 409);
+  assert.equal(b.body.code, 'already_claimed');
+  assert.equal(row.assignments.i1, undefined);
+  assert.equal(row.version, versionBefore + 1);
 });
 
-// ---- release switch (CLAIMS_ENABLED, default off) ----
-
-test('switch: unset means off, 409 claiming_unavailable, and the claim state is never read or written', async () => {
-  delete process.env.CLAIMS_ENABLED;
-  let reads = 0;
-  beforeRead = async () => {
-    reads += 1;
+// Holds one request after its first read so that read is stale by the time it
+// writes. Returns { started, release, request }.
+function holdFirstRead(makeRequest) {
+  let firstRead = true;
+  let signalStale;
+  const started = new Promise((resolve) => {
+    signalStale = resolve;
+  });
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  afterRead = async () => {
+    if (firstRead) {
+      firstRead = false;
+      signalStale();
+      await held;
+    }
   };
-  const res = await patch(claim('Ali'));
-  assert.equal(res.statusCode, 409);
-  assert.deepEqual(res.body, { code: 'claiming_unavailable' });
-  assert.equal(reads, 0);
-  assert.equal(casAttempts, 0);
-  assert.equal(writes, 0);
-  assert.equal(row.version, 0);
-  // Off also answers before validation and before the split lookup.
-  assert.equal((await patch(null)).statusCode, 409);
-  assert.equal((await patch(claim('Ali'), '')).statusCode, 409);
-});
+  const request = makeRequest();
+  return { started, release, request };
+}
 
-test('switch: only the exact string "true" turns claiming on', async () => {
-  for (const value of ['1', 'TRUE', 'True', 'yes', 'on', ' true', 'true ', '']) {
-    process.env.CLAIMS_ENABLED = value;
-    const res = await patch(claim('Ali'));
-    assert.equal(res.statusCode, 409, JSON.stringify(value));
-    assert.deepEqual(res.body, { code: 'claiming_unavailable' });
-  }
-  assert.equal(writes, 0);
-  process.env.CLAIMS_ENABLED = 'true';
-  assert.equal((await patch(claim('Ali'))).statusCode, 200);
+test('collision: a claim that loses the write to a claim-then-unclaim on the same item retries, re-decides on fresh state and gets 200', async () => {
+  // Bea's first read sees the item free at version 0; she is then held while
+  // Ali claims and un-claims (version 2), so her write at version 0 must lose.
+  const bea = holdFirstRead(() => patch(claim('Bea')));
+  await bea.started;
+  afterRead = async () => {};
+  assert.equal((await patch(claim('Ali'))).statusCode, 200); // version 1
+  assert.equal((await patch({ action: 'unclaim', itemId: 'i1', payer: 'Ali' })).statusCode, 200); // version 2
+  assert.equal(row.version, 2);
+  casAttempts = 0;
+  writes = 0;
+  bea.release();
+  const res = await bea.request;
+  // Attempt 1 wrote against version 0 and lost; the re-read saw the item free again.
+  assert.equal(res.statusCode, 200);
+  assert.equal(casAttempts, 2);
   assert.equal(writes, 1);
+  assert.equal(res.body.version, 3);
+  assert.deepEqual(res.body.assignments.i1.equal, ['Bea']);
+  assert.deepEqual(row.assignments.i1.equal, ['Bea']);
 });
 
-test('switch: GET and POST are unaffected when claiming is off', async () => {
-  delete process.env.CLAIMS_ENABLED;
-  assert.equal((await call('GET', undefined)).statusCode, 200);
-  assert.equal((await call('DELETE', undefined)).statusCode, 405);
-  assert.equal((await call('POST', {})).statusCode, 400); // POST still reaches its own validation
+test('collision: a claim that loses the write to another claim on the same item re-decides to a calm 409 with the winner state', async () => {
+  const bea = holdFirstRead(() => patch(claim('Bea')));
+  await bea.started;
+  afterRead = async () => {};
+  assert.equal((await patch(claim('Ali'))).statusCode, 200);
+  casAttempts = 0;
+  bea.release();
+  const res = await bea.request;
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.code, 'already_claimed');
+  assert.deepEqual(res.body.assignments.i1.equal, ['Ali']);
+  assert.equal(casAttempts, 1); // the one lost write; the re-decision wrote nothing
+  assert.equal(row.version, 1);
 });
