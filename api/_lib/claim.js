@@ -62,7 +62,7 @@ function isPayerClaim(assignment) {
  * @returns {{outcome: 'applied', assignments: object}
  *   | {outcome: 'unchanged'}          nothing to write (repeat tap, or nothing to undo)
  *   | {outcome: 'already_claimed'}    the item belongs to someone else
- *   | {outcome: 'not_your_claim'}}    un-claim of something that is not the caller's
+ *   | {outcome: 'not_your_claim'}}    un-claim of a host-set dish
  */
 function decideClaim(split, claim) {
   const roster = split.payers;
@@ -89,11 +89,15 @@ function decideClaim(split, claim) {
     return { outcome: 'already_claimed' };
   }
 
-  // unclaim: a person may remove only their own name, and only from a claim
+  // unclaim: a person may remove only their own name, and only from a claim.
+  // Nothing to undo (dish unclaimed, or the caller's name already absent from a
+  // payer claim, e.g. a retried request) is a quiet success (Tony, 2026-09-28).
+  // The request carries only the caller's own name, so the server cannot tell
+  // a retry from an attempt at someone else's name; either way nothing changes.
+  // not_your_claim is left for a host-set dish, which no payer may un-claim.
   if (isItemUnclaimed(current, roster)) return { outcome: 'unchanged' };
-  if (!isPayerClaim(current) || !equalNamesOf(current, roster).includes(caller)) {
-    return { outcome: 'not_your_claim' };
-  }
+  if (!isPayerClaim(current)) return { outcome: 'not_your_claim' };
+  if (!equalNamesOf(current, roster).includes(caller)) return { outcome: 'unchanged' };
   const remaining = current.equal.filter((name) => name !== caller);
   const next = { ...assignments };
   if (remaining.some((name) => roster.includes(name))) {

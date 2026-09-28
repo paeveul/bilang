@@ -161,12 +161,46 @@ test('409 already_claimed: host-assigned, Set-amounts (partly allocated) dishes 
   assert.equal(row.version, 0);
 });
 
-test('403 not_your_claim: removing someone else\'s name changes nothing', async () => {
-  await patch(claim('Ali', 'i1', { sharedWith: ['Bea'] }));
-  const res = await patch({ action: 'unclaim', itemId: 'i1', payer: 'Cy' });
-  assert.equal(res.statusCode, 403);
-  assert.deepEqual(res.body, { code: 'not_your_claim' });
-  assert.equal(row.version, 1);
+test('403 not_your_claim: un-claiming a host-set dish (equal or Set amounts) changes nothing', async () => {
+  for (const itemId of ['i3', 'i4']) {
+    const res = await patch({ action: 'unclaim', itemId, payer: 'Cy' });
+    assert.equal(res.statusCode, 403, itemId);
+    assert.deepEqual(res.body, { code: 'not_your_claim' });
+  }
+  assert.equal(row.version, 0);
+  assert.equal(writes, 0);
+});
+
+test('200 unchanged: a retried un-claim (name already gone, or dish already unclaimed) is a quiet success, no version change', async () => {
+  await patch(claim('Ali', 'i1', { sharedWith: ['Bea'] })); // v1
+  // Cy was never on it (or already removed themselves): same quiet result.
+  let res = await patch({ action: 'unclaim', itemId: 'i1', payer: 'Cy' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.version, 1);
+  assert.deepEqual(res.body.assignments.i1.equal, ['Ali', 'Bea']);
+  // Ali un-claims, then the same request is retried.
+  res = await patch({ action: 'unclaim', itemId: 'i1', payer: 'Ali' }); // v2
+  assert.equal(res.body.version, 2);
+  res = await patch({ action: 'unclaim', itemId: 'i1', payer: 'Ali' }); // retry
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.version, 2);
+  // Fully unclaimed dish: also quiet.
+  await patch({ action: 'unclaim', itemId: 'i1', payer: 'Bea' }); // v3
+  res = await patch({ action: 'unclaim', itemId: 'i1', payer: 'Bea' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.version, 3);
+  assert.equal(row.version, 3);
+  assert.equal(writes, 3);
+});
+
+test('409 already_claimed: a repeat tap on a HOST-SET dish by a name on it stays 409, no change', async () => {
+  const res = await patch(claim('Cy', 'i3')); // Cy is the host-set holder of i3
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.code, 'already_claimed');
+  const set = await patch(claim('Cy', 'i4')); // and of the Set-amounts dish
+  assert.equal(set.statusCode, 409);
+  assert.equal(row.version, 0);
+  assert.equal(writes, 0);
 });
 
 test('unclaim: shared claim keeps the others; last person out makes it unclaimed again', async () => {

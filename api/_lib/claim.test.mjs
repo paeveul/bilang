@@ -126,8 +126,9 @@ test('when the last name removes itself the item is unclaimed again (key removed
   assert.deepEqual(d.assignments.i2, ['Bea']);
 });
 
-test('unclaim of a name that is not the caller is not_your_claim', () => {
-  assert.equal(decide({ i1: claimed(['Ali']) }, 'unclaim', ['Bea']).outcome, 'not_your_claim');
+test('unclaim by a name that is simply not on a payer claim is unchanged (a retried un-claim is a quiet success)', () => {
+  assert.equal(decide({ i1: claimed(['Ali']) }, 'unclaim', ['Bea']).outcome, 'unchanged');
+  assert.equal(decide({ i1: claimed(['Ali', 'Bea']) }, 'unclaim', ['Cy']).outcome, 'unchanged');
 });
 
 test('unclaim cannot touch a host-assigned or Set-amounts dish', () => {
