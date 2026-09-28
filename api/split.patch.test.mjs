@@ -294,6 +294,7 @@ test('anonymous: no cookie or Authorization header is needed or read', async () 
 
 // ---- simulated collisions ----
 
+// The overlap between the two requests here comes from async ordering (the stub's awaits), not from real parallelism.
 test('collision: two claims race on the SAME item, ten runs, one wins and one gets calm 409', async () => {
   for (let run = 0; run < 10; run += 1) {
     row.assignments = {};
@@ -449,4 +450,44 @@ test('collision: a claim that loses the write to another claim on the same item 
   assert.deepEqual(res.body.assignments.i1.equal, ['Ali']);
   assert.equal(casAttempts, 1); // the one lost write; the re-decision wrote nothing
   assert.equal(row.version, 1);
+});
+
+// ---- release switch (CLAIMS_ENABLED, default off) ----
+
+test('switch: unset means off, 409 claiming_unavailable, and the claim state is never read or written', async () => {
+  delete process.env.CLAIMS_ENABLED;
+  let reads = 0;
+  beforeRead = async () => {
+    reads += 1;
+  };
+  const res = await patch(claim('Ali'));
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body, { code: 'claiming_unavailable' });
+  assert.equal(reads, 0);
+  assert.equal(casAttempts, 0);
+  assert.equal(writes, 0);
+  assert.equal(row.version, 0);
+  // Off also answers before validation and before the split lookup.
+  assert.equal((await patch(null)).statusCode, 409);
+  assert.equal((await patch(claim('Ali'), '')).statusCode, 409);
+});
+
+test('switch: only the exact string "true" turns claiming on', async () => {
+  for (const value of ['1', 'TRUE', 'True', 'yes', 'on', ' true', 'true ', '']) {
+    process.env.CLAIMS_ENABLED = value;
+    const res = await patch(claim('Ali'));
+    assert.equal(res.statusCode, 409, JSON.stringify(value));
+    assert.deepEqual(res.body, { code: 'claiming_unavailable' });
+  }
+  assert.equal(writes, 0);
+  process.env.CLAIMS_ENABLED = 'true';
+  assert.equal((await patch(claim('Ali'))).statusCode, 200);
+  assert.equal(writes, 1);
+});
+
+test('switch: GET and POST are unaffected when claiming is off', async () => {
+  delete process.env.CLAIMS_ENABLED;
+  assert.equal((await call('GET', undefined)).statusCode, 200);
+  assert.equal((await call('DELETE', undefined)).statusCode, 405);
+  assert.equal((await call('POST', {})).statusCode, 400); // POST still reaches its own validation
 });
