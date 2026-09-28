@@ -20,7 +20,7 @@
 function manualAmountsOf(assignment) {
   if (assignment.amounts) return assignment.amounts;
   const values = (assignment.manual && assignment.manual.values) || {};
-  const amounts = {};
+  const amounts = Object.create(null); // no prototype: a "__proto__" key stays an ordinary entry
   for (const name of Object.keys(values)) amounts[name] = values[name] && values[name].cents;
   return amounts;
 }
@@ -67,7 +67,9 @@ function isPayerClaim(assignment) {
 function decideClaim(split, claim) {
   const roster = split.payers;
   const assignments = split.assignments || {};
-  const current = assignments[claim.itemId];
+  const current = Object.prototype.hasOwnProperty.call(assignments, claim.itemId)
+    ? assignments[claim.itemId]
+    : undefined;
   const [caller] = claim.names;
 
   if (claim.action === 'claim') {

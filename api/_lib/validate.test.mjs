@@ -261,3 +261,14 @@ test('resolveRosterName: returns the roster spelling, ignoring case and spaces',
   assert.equal(resolveRosterName(claimSplit.payers, 'Zed'), null);
   assert.equal(resolveRosterName(null, 'Ali'), null);
 });
+
+test('payers: names that collide with Object.prototype keys are rejected (case-insensitive, after trim)', () => {
+  const ok = (payers) => validateSplitCreateRequest(validSplitBody({ payers }));
+  for (const bad of ['__proto__', 'constructor', 'prototype', '__PROTO__', ' Constructor ', 'PROTOTYPE ']) {
+    assert.equal(ok([bad, 'Bea']), 'Invalid payers list', JSON.stringify(bad));
+    assert.equal(ok(['Bea', bad]), 'Invalid payers list', JSON.stringify(bad));
+  }
+  // Ordinary names that merely contain those words are fine.
+  assert.equal(ok(['Constructor Cy', 'proto']), null);
+  assert.equal(ok(['__proto__x']), null);
+});

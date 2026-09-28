@@ -13,6 +13,11 @@ const MAX_STRING_LEN = 200;
 const MAX_PAYER_NAME_LEN = 20;
 const MAX_PAYERS = 200;
 
+// Names that collide with Object.prototype keys. They are never valid roster
+// names: the roster is used as a lookup key downstream, and `__proto__` in
+// particular cannot be stored safely as one. Compared trimmed and lower-cased.
+const RESERVED_NAME_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 // Must match RECEIPT_TOOL's input_schema category enum in api/_lib/anthropic.js
 // and the <select> options in js/app.js — three independent copies of the same
 // list. If you change one, change all three.
@@ -55,10 +60,15 @@ function isValidPayersList(payers) {
     const trimmed = name.trim();
     if (trimmed.length === 0 || trimmed.length > MAX_PAYER_NAME_LEN) return false;
     const key = trimmed.toLowerCase();
+    if (RESERVED_NAME_KEYS.has(key)) return false;
     if (seen.has(key)) return false;
     seen.add(key);
   }
   return true;
+}
+
+function isReservedNameKey(name) {
+  return typeof name === 'string' && RESERVED_NAME_KEYS.has(name.trim().toLowerCase());
 }
 
 /**
@@ -268,6 +278,7 @@ module.exports = {
   isValidPayersList,
   validateClaimRequest,
   resolveRosterName,
+  isReservedNameKey,
   MAX_PAYERS,
   MAX_PAYER_NAME_LEN,
 };

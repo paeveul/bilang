@@ -6,6 +6,7 @@
 // the client sent.
 
 const { computeTotals, toCents, fromCents } = require('./totals');
+const { isReservedNameKey } = require('./validate');
 
 /**
  * Who the payers are, in display order.
@@ -19,7 +20,9 @@ function resolvePayers(body) {
   }
   const perPerson = body.totals && body.totals.per_person;
   if (perPerson && typeof perPerson === 'object' && !Array.isArray(perPerson)) {
-    const names = Object.keys(perPerson);
+    // Reserved names (`__proto__`, `constructor`, `prototype`) can never be on a
+    // valid roster, so a hostile per_person key is not turned into a payer.
+    const names = Object.keys(perPerson).filter((name) => !isReservedNameKey(name));
     if (names.length > 0) return { payers: names, source: 'per_person' };
   }
   return { payers: null, source: 'none' };
@@ -69,7 +72,14 @@ function recomputeSplitTotals(body) {
   try {
     const { perPerson, unclaimed } = computeTotals(body.items, body.assignments, body.totals, payers);
     const serverPerPerson = {};
-    for (const name of payers) serverPerPerson[name] = fromCents(perPerson[name].totalCents);
+    for (const name of payers) {
+      Object.defineProperty(serverPerPerson, name, {
+        value: fromCents(perPerson[name].totalCents),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
 
     const { diffs, extraClient } = diffPerPerson(payers, perPerson, body.totals.per_person);
     return {

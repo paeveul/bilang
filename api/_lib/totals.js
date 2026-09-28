@@ -78,12 +78,15 @@ function centsToPercent(cents, lineTotalRM) {
 function manualAmountsOf(assignment) {
   if (assignment.amounts) return assignment.amounts;
   const values = (assignment.manual && assignment.manual.values) || {};
-  const amounts = {};
+  // No prototype, so a stored key such as "__proto__" stays an ordinary entry.
+  const amounts = Object.create(null);
   for (const name of Object.keys(values)) {
     amounts[name] = values[name] && values[name].cents;
   }
   return amounts;
 }
+
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 
 /**
  * @typedef {object} Item
@@ -119,16 +122,21 @@ function manualAmountsOf(assignment) {
  * }}
  */
 function computeTotals(items, assignments, billTotals, payers) {
-  const perPerson = {};
+  // Per-person accumulators live in a Map, so lookups are by exact roster name
+  // only: a name that happens to match an Object.prototype key (constructor,
+  // toString, __proto__) is simply not a payer, and nothing is ever written
+  // onto a shared global. The returned perPerson is a plain object of the same
+  // shape as before, built from the same accumulators.
+  const accounts = new Map();
   for (const name of payers) {
-    perPerson[name] = { itemsCents: 0, taxCents: 0, serviceCents: 0, totalCents: 0 };
+    accounts.set(name, { itemsCents: 0, taxCents: 0, serviceCents: 0, totalCents: 0 });
   }
 
   let itemizedSubtotalCents = 0;
   let unclaimedItemsCents = 0;
 
   for (const item of items) {
-    const assignment = assignments[item.id];
+    const assignment = hasOwn(assignments, item.id) ? assignments[item.id] : undefined;
     const lineCents = toCents(item.line_total);
 
     // Manual per-person override (§5.1.1): the assignment already carries
@@ -142,10 +150,10 @@ function computeTotals(items, assignments, billTotals, payers) {
       const amounts = manualAmountsOf(assignment);
       let itemSumCents = 0;
       for (const name of Object.keys(amounts)) {
-        if (!perPerson[name]) continue; // ignore amounts for an unknown/removed payer
+        if (!accounts.has(name)) continue; // ignore amounts for an unknown/removed payer
         const cents = Math.round(Number(amounts[name]) || 0);
         if (!(cents > 0)) continue; // zero/negative/NaN contributes nothing
-        perPerson[name].itemsCents += cents;
+        accounts.get(name).itemsCents += cents;
         itemSumCents += cents;
       }
       // Only what was actually allocated counts toward the itemized
@@ -165,7 +173,7 @@ function computeTotals(items, assignments, billTotals, payers) {
     // way, and everything from here down is unchanged from before manual
     // mode existed.
     const names = Array.isArray(assignment) ? assignment : assignment?.equal;
-    const assignedTo = (names || []).filter((name) => perPerson[name]);
+    const assignedTo = (names || []).filter((name) => accounts.has(name));
     if (assignedTo.length === 0) {
       unclaimedItemsCents += lineCents;
       continue;
@@ -184,7 +192,7 @@ function computeTotals(items, assignments, billTotals, payers) {
         cents += 1;
         remainder -= 1;
       }
-      perPerson[name].itemsCents += cents;
+      accounts.get(name).itemsCents += cents;
     });
   }
 
@@ -216,11 +224,11 @@ function computeTotals(items, assignments, billTotals, payers) {
     // if the item review step left a small mismatch against that field.
     let taxRemaining = taxCents;
     let serviceRemaining = serviceCents;
-    const namesWithItems = payers.filter((n) => perPerson[n].itemsCents > 0);
+    const namesWithItems = payers.filter((n) => accounts.get(n).itemsCents > 0);
 
     namesWithItems.forEach((name, idx) => {
       const isLast = idx === namesWithItems.length - 1;
-      const p = perPerson[name];
+      const p = accounts.get(name);
       const shareRatio = p.itemsCents / itemizedSubtotalCents;
 
       const taxShare = isLast ? taxRemaining : Math.round(taxCents * shareRatio);
@@ -233,9 +241,13 @@ function computeTotals(items, assignments, billTotals, payers) {
     });
   }
 
+  const perPerson = {};
   for (const name of payers) {
-    const p = perPerson[name];
+    const p = accounts.get(name);
     p.totalCents = p.itemsCents + p.taxCents + p.serviceCents;
+    // defineProperty, not assignment, so even a "__proto__" name is stored as
+    // an own key rather than changing the object's prototype.
+    Object.defineProperty(perPerson, name, { value: p, enumerable: true, writable: true, configurable: true });
   }
 
   const statedSubtotalCents = toCents(billTotals.subtotal);

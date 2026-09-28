@@ -72,3 +72,74 @@ test('CommonJS require works the way a serverless handler loads it', () => {
   assert.equal(again, cjs);
   assert.equal(typeof again.computeTotals, 'function');
 });
+
+// ---- name-key safety: a name matching an Object.prototype key is data, never a payer ----
+
+const probeItems = [{ id: 'i1', name: 'Nasi', qty: 1, unit_price: 10, line_total: 10 }];
+const probeBill = { subtotal: 10, service_charge: 1, tax: 0.6, grand_total: 11.6 };
+
+function globalsSnapshot() {
+  return JSON.stringify([
+    Object.keys(Object),
+    Object.keys(Object.prototype),
+    Object.getOwnPropertyNames(Object.prototype).sort(),
+    Object.itemsCents,
+    Object.totalCents,
+  ]);
+}
+
+test('equal split: off-roster names that match Object.prototype keys are NOT payers and touch no globals', () => {
+  const before = globalsSnapshot();
+  for (const reserved of ['constructor', 'toString', 'hasOwnProperty', 'valueOf', '__proto__', 'prototype']) {
+    const roster = ['Ali'];
+    const withReserved = cjs.computeTotals(probeItems, { i1: [reserved] }, probeBill, roster);
+    const unassigned = cjs.computeTotals(probeItems, {}, probeBill, roster);
+    assert.equal(JSON.stringify(withReserved), JSON.stringify(unassigned), reserved);
+    assert.deepEqual(Object.keys(withReserved.perPerson), ['Ali'], reserved);
+    for (const p of Object.values(withReserved.perPerson)) assert.equal(Number.isNaN(p.totalCents), false);
+    // wrapper shape too
+    const wrapped = cjs.computeTotals(probeItems, { i1: { mode: 'equal', equal: [reserved] } }, probeBill, roster);
+    assert.equal(JSON.stringify(wrapped), JSON.stringify(unassigned), `${reserved} (wrapper)`);
+  }
+  assert.equal(globalsSnapshot(), before);
+  assert.equal(Object.itemsCents, undefined);
+  assert.equal(({}).itemsCents, undefined);
+});
+
+test('equal split: a real payer sharing a dish with an off-roster reserved name is charged as if alone', () => {
+  const roster = ['Ali', 'Bea'];
+  const mixed = cjs.computeTotals(probeItems, { i1: ['constructor', 'Ali'] }, probeBill, roster);
+  const alone = cjs.computeTotals(probeItems, { i1: ['Ali'] }, probeBill, roster);
+  assert.equal(JSON.stringify(mixed), JSON.stringify(alone));
+});
+
+test('manual split: reserved keys in amounts are ignored, not charged and not written to globals', () => {
+  const before = globalsSnapshot();
+  const roster = ['Ali'];
+  const amounts = JSON.parse('{"__proto__": 500, "constructor": 500, "toString": 500, "Ali": 400}');
+  const withReserved = cjs.computeTotals(probeItems, { i1: { mode: 'manual', amounts } }, probeBill, roster);
+  const plain = cjs.computeTotals(probeItems, { i1: { mode: 'manual', amounts: { Ali: 400 } } }, probeBill, roster);
+  assert.equal(JSON.stringify(withReserved), JSON.stringify(plain));
+  const stored = JSON.parse('{"__proto__": {"cents": 500}, "constructor": {"cents": 500}, "Ali": {"cents": 400}}');
+  const viaStored = cjs.computeTotals(
+    probeItems,
+    { i1: { mode: 'manual', manual: { values: stored } } },
+    probeBill,
+    roster
+  );
+  assert.equal(JSON.stringify(viaStored), JSON.stringify(plain));
+  assert.equal(globalsSnapshot(), before);
+});
+
+test('an item id that matches an Object.prototype key is treated as an ordinary unassigned item', () => {
+  const items = [{ id: 'constructor', name: 'Odd', qty: 1, unit_price: 10, line_total: 10 }];
+  const result = cjs.computeTotals(items, {}, probeBill, ['Ali']);
+  assert.equal(result.unclaimed.itemsCents, 1000);
+  assert.equal(result.perPerson.Ali.totalCents, 0);
+});
+
+test('js/totals.js entry point behaves the same on the reserved-name probe', () => {
+  const a = JSON.stringify(cjs.computeTotals(probeItems, { i1: ['constructor'] }, probeBill, ['Ali']));
+  const b = JSON.stringify(esm.computeTotals(probeItems, { i1: ['constructor'] }, probeBill, ['Ali']));
+  assert.equal(a, b);
+});

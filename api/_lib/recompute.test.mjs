@@ -119,3 +119,30 @@ test('all-assigned bill: unclaimed is 0 and per-person figures are unchanged', (
   assert.equal(r.totals.unclaimed_items, 0);
   assert.deepEqual(r.totals.per_person, honestPerPerson(b));
 });
+
+test('per_person fallback: a hostile per_person key never becomes a payer or leaks into stored figures', () => {
+  const before = JSON.stringify([Object.keys(Object.prototype), Object.itemsCents]);
+  const perPerson = JSON.parse('{"Ali": 5.5, "Bea": 10.74}');
+  const b = body({ payers: undefined, totals: { ...body().totals, per_person: perPerson } });
+  delete b.payers;
+  const out = recomputeSplitTotals(b);
+  assert.deepEqual(Object.keys(out.totals.per_person), ['Ali', 'Bea']);
+
+  // Roster ['Ali'] plus a host-sent assignment naming 'constructor': same figures as unassigned.
+  const r1 = recomputeSplitTotals(body({ payers: ['Ali'], assignments: { i1: ['constructor'] }, totals: { ...body().totals, per_person: {} } }));
+  const r2 = recomputeSplitTotals(body({ payers: ['Ali'], assignments: {}, totals: { ...body().totals, per_person: {} } }));
+  assert.equal(JSON.stringify(r1.totals), JSON.stringify(r2.totals));
+  assert.deepEqual(Object.keys(r1.totals.per_person), ['Ali']);
+  assert.equal(JSON.stringify([Object.keys(Object.prototype), Object.itemsCents]), before);
+});
+
+test('per_person fallback with reserved keys: they are not payers, stored per_person is exactly the real names as own keys', () => {
+  const hostile = JSON.parse('{"__proto__": 1, "constructor": 3, "Ali": 2}');
+  const b = body({ totals: { ...body().totals, per_person: hostile } });
+  delete b.payers;
+  const out = recomputeSplitTotals(b);
+  assert.equal(out.source, 'per_person');
+  assert.deepEqual(Object.keys(out.totals.per_person), ['Ali']);
+  assert.equal(Object.getPrototypeOf(out.totals.per_person), Object.prototype);
+  assert.equal(JSON.stringify(Object.keys(JSON.parse(JSON.stringify(out.totals.per_person)))), '["Ali"]');
+});
