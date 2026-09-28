@@ -39,8 +39,8 @@ async function pollRateLimited(req) {
   return false;
 }
 
-// Check order: method dispatch -> (GET/PATCH) poll limiter -> body/query
-// validation -> data access. POST keeps its own order inside handlePost.
+// Check order: method dispatch -> (GET/PATCH) poll limiter -> (PATCH) release
+// switch CLAIMS_ENABLED -> body/query validation -> data access. POST keeps its own order inside handlePost.
 module.exports = async function handler(req, res) {
   if (req.method === 'GET' || req.method === 'PATCH') {
     if (await pollRateLimited(req)) {
@@ -142,6 +142,17 @@ async function handlePost(req, res) {
  * Step 4, which lands directly after this item.
  */
 async function handlePatch(req, res) {
+  // Release switch. CLAIMS_ENABLED must be exactly the string 'true'; unset or
+  // anything else is off. It stays off until Item 21 Step 4 (Build Order 2B:
+  // recompute the totals inside the claim write) lands, because a claim changes
+  // assignments but not the stored totals, so the stored per-person figures
+  // would go stale. Off answers with the same body as a split with no roster,
+  // and touches neither validation nor the claim state. Read on every request
+  // so it is a configuration change, not a redeploy of code.
+  if (process.env.CLAIMS_ENABLED !== 'true') {
+    res.status(409).json({ code: 'claiming_unavailable' });
+    return;
+  }
   const id = String(req.query.id || '').trim();
   if (!id) {
     res.status(400).json({ error: 'Missing id' });

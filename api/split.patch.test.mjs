@@ -6,7 +6,7 @@
 // Postgres) cannot run until the migration is applied; the races here are
 // simulated in memory and prove the handler's logic, not Postgres.
 
-import { test, beforeEach } from 'node:test';
+import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
@@ -78,7 +78,17 @@ async function call(method, body, id = 'abc') {
 const patch = (body, id) => call('PATCH', body, id);
 const claim = (payer, itemId = 'i1', extra = {}) => ({ action: 'claim', itemId, payer, ...extra });
 
+// CLAIMS_ENABLED is read at request time and defaults off. Every test here
+// sets it explicitly and restores the caller's value afterwards, so nothing
+// leaks in or out.
+const savedClaimsEnabled = process.env.CLAIMS_ENABLED;
+afterEach(() => {
+  if (savedClaimsEnabled === undefined) delete process.env.CLAIMS_ENABLED;
+  else process.env.CLAIMS_ENABLED = savedClaimsEnabled;
+});
+
 beforeEach(() => {
+  process.env.CLAIMS_ENABLED = 'true';
   writes = 0;
   casAttempts = 0;
   beforeRead = async () => {};
@@ -332,4 +342,44 @@ test('collision: a claim that loses to an UNCLAIM on the same item re-decides fr
   const stored = row.assignments.i1;
   if (b.statusCode === 200) assert.deepEqual(stored.equal, ['Bea']);
   else assert.equal(stored, undefined);
+});
+
+// ---- release switch (CLAIMS_ENABLED, default off) ----
+
+test('switch: unset means off, 409 claiming_unavailable, and the claim state is never read or written', async () => {
+  delete process.env.CLAIMS_ENABLED;
+  let reads = 0;
+  beforeRead = async () => {
+    reads += 1;
+  };
+  const res = await patch(claim('Ali'));
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body, { code: 'claiming_unavailable' });
+  assert.equal(reads, 0);
+  assert.equal(casAttempts, 0);
+  assert.equal(writes, 0);
+  assert.equal(row.version, 0);
+  // Off also answers before validation and before the split lookup.
+  assert.equal((await patch(null)).statusCode, 409);
+  assert.equal((await patch(claim('Ali'), '')).statusCode, 409);
+});
+
+test('switch: only the exact string "true" turns claiming on', async () => {
+  for (const value of ['1', 'TRUE', 'True', 'yes', 'on', ' true', 'true ', '']) {
+    process.env.CLAIMS_ENABLED = value;
+    const res = await patch(claim('Ali'));
+    assert.equal(res.statusCode, 409, JSON.stringify(value));
+    assert.deepEqual(res.body, { code: 'claiming_unavailable' });
+  }
+  assert.equal(writes, 0);
+  process.env.CLAIMS_ENABLED = 'true';
+  assert.equal((await patch(claim('Ali'))).statusCode, 200);
+  assert.equal(writes, 1);
+});
+
+test('switch: GET and POST are unaffected when claiming is off', async () => {
+  delete process.env.CLAIMS_ENABLED;
+  assert.equal((await call('GET', undefined)).statusCode, 200);
+  assert.equal((await call('DELETE', undefined)).statusCode, 405);
+  assert.equal((await call('POST', {})).statusCode, 400); // POST still reaches its own validation
 });
