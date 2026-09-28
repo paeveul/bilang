@@ -115,7 +115,7 @@ function validateClaimRequest(body, split = null) {
     return 'Request body is too large';
   }
   for (const key of Object.keys(body)) {
-    if (!CLAIM_FIELDS.includes(key)) return `Unknown field: ${key}`;
+    if (!CLAIM_FIELDS.includes(key)) return 'Unknown field in request'; // fixed text: never echo the caller's field name
   }
   if (!CLAIM_ACTIONS.includes(body.action)) {
     return 'Invalid action';

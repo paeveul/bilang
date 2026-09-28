@@ -204,6 +204,17 @@ test('validateClaimRequest: rejects unknown fields, including items, totals and 
   }
 });
 
+test('validateClaimRequest: the unknown-field message is fixed and never echoes the caller field name', () => {
+  const messages = new Set();
+  for (const field of ['items', 'zz_secret_field_9', '<script>alert(1)</script>', 'a'.repeat(300)]) {
+    const message = validateClaimRequest(claimBody({ [field]: 1 }), claimSplit);
+    assert.equal(typeof message, 'string');
+    assert.equal(message.includes(field), false, field.slice(0, 20));
+    messages.add(message);
+  }
+  assert.equal(messages.size, 1);
+});
+
 test('validateClaimRequest: rejects a bad action', () => {
   for (const action of [undefined, 'delete', 'CLAIM', 1]) {
     assert.equal(validateClaimRequest(claimBody({ action }), claimSplit), 'Invalid action');
