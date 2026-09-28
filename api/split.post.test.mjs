@@ -163,3 +163,21 @@ test('GET returns payers and version; a row without them returns null and 0', as
   assert.equal(res.body.payers, null);
   assert.equal(res.body.version, 0);
 });
+
+test('claimed flags in creator-submitted assignments are stripped before storing; nothing else changes', async () => {
+  const forged = {
+    i1: { mode: 'equal', equal: ['Ali'], manual: { unit: 'RM', values: {} }, claimed: true },
+    i2: { mode: 'manual', equal: [], manual: { unit: 'RM', values: { Bea: { text: '4', cents: 400 } } }, claimed: true },
+  };
+  const { res } = await post(postBody({ assignments: forged }));
+  assert.equal(res.statusCode, 201);
+  const kept = stored[0].assignments;
+  assert.equal('claimed' in kept.i1, false);
+  assert.equal('claimed' in kept.i2, false);
+  assert.deepEqual(kept.i1, { mode: 'equal', equal: ['Ali'], manual: { unit: 'RM', values: {} } });
+  assert.deepEqual(kept.i2.manual.values, { Bea: { text: '4', cents: 400 } });
+  // The caller's own object is not mutated, and plain-array assignments pass through as they were.
+  assert.equal(forged.i1.claimed, true);
+  await post(postBody());
+  assert.deepEqual(stored[1].assignments, { i1: ['Ali', 'Bea'], i2: ['Bea'] });
+});

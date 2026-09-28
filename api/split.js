@@ -85,6 +85,21 @@ async function handleGet(req, res) {
   }
 }
 
+// A copy of the assignments with any `claimed` key removed from each entry.
+// Own-property copy (Object.fromEntries defines keys, so an item id such as
+// "__proto__" stays an ordinary key). Plain-array entries pass through as is.
+function stripClaimedFlags(assignments) {
+  return Object.fromEntries(
+    Object.entries(assignments).map(([itemId, value]) => {
+      if (value && typeof value === 'object' && !Array.isArray(value) && 'claimed' in value) {
+        const { claimed, ...rest } = value;
+        return [itemId, rest];
+      }
+      return [itemId, value];
+    })
+  );
+}
+
 async function handlePost(req, res) {
   const validationError = validateSplitCreateRequest(req.body);
   if (validationError) {
@@ -92,10 +107,14 @@ async function handlePost(req, res) {
     return;
   }
 
-  const { items, assignments, payers, ownerPaymentHandle } = req.body;
+  const { items, payers, ownerPaymentHandle } = req.body;
+  // `claimed` marks a payer-made claim (api/_lib/claim.js) and is set only by
+  // the PATCH path. Strip it from anything the creator submits so a host-set
+  // dish can never pass as a payer claim.
+  const assignments = stripClaimedFlags(req.body.assignments);
   const id = generateSplitId();
 
-  const recomputed = recomputeSplitTotals(req.body);
+  const recomputed = recomputeSplitTotals({ ...req.body, assignments });
   const totals = recomputed.totals;
   if (recomputed.source === 'per_person') {
     console.log(`split ${id}: payers not sent, derived from totals.per_person`);
