@@ -112,6 +112,30 @@ async function getSplit(id) {
 }
 
 /**
+ * Version-guarded write of a split's assignments (compare-and-swap).
+ * Applies only if the row is still at `expectedVersion`, and bumps the version
+ * by one in the same statement, so a caller that read a stale row changes
+ * nothing. Never writes `items` or `totals`.
+ *
+ * @param {string} id
+ * @param {number} expectedVersion - the version the caller read
+ * @param {object} assignments - the complete new assignments object
+ * @returns {Promise<{assignments: object, totals: object, version: number}|null>}
+ *   the updated row, or null if nobody matched (the version moved, or the row is gone)
+ */
+async function claimSplitItem(id, expectedVersion, assignments) {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('splits')
+    .update({ assignments, version: expectedVersion + 1 })
+    .eq('id', id)
+    .eq('version', expectedVersion)
+    .select('assignments, totals, version');
+  if (error) throw error;
+  return data && data.length > 0 ? data[0] : null;
+}
+
+/**
  * Fire-and-forget insert into the anonymised analytics dataset (roadmap F7a).
  * Rows here MUST NOT carry a name, payment handle, or any reversible link
  * back to the `splits` row that produced them.
@@ -129,4 +153,4 @@ async function insertAnalyticsRows(rows) {
   }
 }
 
-module.exports = { createSplit, getSplit, insertAnalyticsRows };
+module.exports = { createSplit, getSplit, claimSplitItem, insertAnalyticsRows };

@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 let hasNewColumns = true;
+let stateRow = null;
 const calls = [];
 const sdkPath = require.resolve('@supabase/supabase-js');
 require.cache[sdkPath] = {
@@ -32,6 +33,30 @@ require.cache[sdkPath] = {
             },
           }),
         }),
+        update: (patch) => {
+          const filters = {};
+          const chain = {
+            eq: (column, value) => {
+              filters[column] = value;
+              return chain;
+            },
+            select: async (columns) => {
+              calls.push({ op: 'update', patch, filters: { ...filters }, columns });
+              if (!hasNewColumns) {
+                return { data: null, error: { code: '42703', message: 'column splits.version does not exist' } };
+              }
+              if (stateRow && stateRow.id === filters.id && stateRow.version === filters.version) {
+                Object.assign(stateRow, patch);
+                return {
+                  data: [{ assignments: stateRow.assignments, totals: stateRow.totals, version: stateRow.version }],
+                  error: null,
+                };
+              }
+              return { data: [], error: null };
+            },
+          };
+          return chain;
+        },
         select: (columns) => ({
           eq: () => ({
             maybeSingle: async () => {
@@ -50,13 +75,14 @@ require.cache[sdkPath] = {
 };
 process.env.SUPABASE_URL = 'http://stub';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'stub';
-const { createSplit, getSplit } = require('./supabase.js');
+const { createSplit, getSplit, claimSplitItem } = require('./supabase.js');
 
 const base = { id: 'x', items: [], assignments: {}, totals: {}, ownerPaymentHandle: 'h', expiresAt: 't' };
 
 beforeEach(() => {
   calls.length = 0;
   hasNewColumns = true;
+  stateRow = { id: 'x', assignments: { i1: [] }, totals: { grand_total: 10 }, version: 4 };
 });
 
 test('createSplit stores payers and leaves version to the column default', async () => {
@@ -105,4 +131,37 @@ test('migration not applied: getSplit falls back to the original columns', async
   } finally {
     console.warn = warn;
   }
+});
+
+test('claimSplitItem: applies at the expected version and bumps it by one', async () => {
+  const next = { i1: { mode: 'equal', equal: ['A'] } };
+  const row = await claimSplitItem('x', 4, next);
+  assert.deepEqual(row, { assignments: next, totals: { grand_total: 10 }, version: 5 });
+  assert.deepEqual(calls[0].filters, { id: 'x', version: 4 });
+  assert.deepEqual(Object.keys(calls[0].patch).sort(), ['assignments', 'version']);
+  assert.equal(stateRow.version, 5);
+});
+
+test('claimSplitItem: a stale version changes nothing and returns null', async () => {
+  const row = await claimSplitItem('x', 3, { i1: ['A'] });
+  assert.equal(row, null);
+  assert.deepEqual(stateRow.assignments, { i1: [] });
+  assert.equal(stateRow.version, 4);
+});
+
+test('claimSplitItem: two writers from the same version, exactly one wins', async () => {
+  const [a, b] = await Promise.all([
+    claimSplitItem('x', 4, { i1: ['A'] }),
+    claimSplitItem('x', 4, { i1: ['B'] }),
+  ]);
+  assert.equal([a, b].filter(Boolean).length, 1);
+  assert.equal(stateRow.version, 5);
+});
+
+test('claimSplitItem: a database error is thrown, not swallowed', async () => {
+  hasNewColumns = false;
+  await assert.rejects(
+    () => claimSplitItem('x', 4, {}),
+    (e) => e.code === '42703'
+  );
 });

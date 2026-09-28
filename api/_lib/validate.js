@@ -61,6 +61,93 @@ function isValidPayersList(payers) {
   return true;
 }
 
+/**
+ * The roster's own spelling of a name, or null if it is not on the roster.
+ * Matching ignores surrounding whitespace and letter case, the same way
+ * isValidPayersList decides two names are the same person, so a claim always
+ * writes the exact spelling `assignments` and `totals.per_person` already use.
+ */
+function resolveRosterName(roster, name) {
+  if (!Array.isArray(roster) || typeof name !== 'string') return null;
+  const key = name.trim().toLowerCase();
+  for (const rosterName of roster) {
+    if (typeof rosterName === 'string' && rosterName.trim().toLowerCase() === key) return rosterName;
+  }
+  return null;
+}
+
+const CLAIM_ACTIONS = ['claim', 'unclaim'];
+const CLAIM_FIELDS = ['action', 'itemId', 'payer', 'sharedWith'];
+const MAX_CLAIM_BODY_CHARS = 16_384;
+
+/**
+ * Validate a PATCH /api/split claim body. Returns an error message, or null
+ * if the body is acceptable. Pure: no I/O.
+ *
+ * The write is one item wide: exactly the fields action, itemId, payer and
+ * (for `claim` only) sharedWith. Anything else, including `items`, `totals`
+ * or a whole `assignments`, is rejected.
+ *
+ * Call it without `split` to check the body's shape only (before the split
+ * has been read), and with the loaded `split` to also check the names against
+ * the stored roster and the item id against the split's items. Callers must
+ * already have handled a split with no roster (that is a 409, not a 400).
+ *
+ * @param {*} body
+ * @param {{items?: Array<{id: string}>, payers?: string[]}|null} [split]
+ * @returns {string|null}
+ */
+function validateClaimRequest(body, split = null) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return 'Invalid request body';
+  }
+  if (JSON.stringify(body).length > MAX_CLAIM_BODY_CHARS) {
+    return 'Request body is too large';
+  }
+  for (const key of Object.keys(body)) {
+    if (!CLAIM_FIELDS.includes(key)) return `Unknown field: ${key}`;
+  }
+  if (!CLAIM_ACTIONS.includes(body.action)) {
+    return 'Invalid action';
+  }
+  if (typeof body.itemId !== 'string' || body.itemId.length === 0 || body.itemId.length > MAX_STRING_LEN) {
+    return 'Invalid itemId';
+  }
+  if (!isClaimName(body.payer)) {
+    return 'Invalid payer name';
+  }
+  if (body.sharedWith !== undefined) {
+    if (body.action !== 'claim') return 'sharedWith applies to claim only';
+    if (!Array.isArray(body.sharedWith) || body.sharedWith.length >= MAX_PAYERS) {
+      return 'Invalid sharedWith list';
+    }
+    if (!body.sharedWith.every(isClaimName)) return 'Invalid name in sharedWith';
+  }
+
+  const named = [body.payer, ...(body.sharedWith || [])];
+  const keys = new Set(named.map((n) => n.trim().toLowerCase()));
+  if (keys.size !== named.length) {
+    return 'Duplicate names in claim';
+  }
+
+  if (split) {
+    if (!Array.isArray(split.items) || !split.items.some((item) => item && item.id === body.itemId)) {
+      return 'Unknown itemId';
+    }
+    if (named.some((n) => resolveRosterName(split.payers, n) === null)) {
+      return 'Name is not on this split';
+    }
+  }
+  return null;
+}
+
+// A claim name follows the roster rule: 1-20 characters once trimmed.
+function isClaimName(name) {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  return trimmed.length > 0 && trimmed.length <= MAX_PAYER_NAME_LEN;
+}
+
 function validateParseRequest(body) {
   if (!body || typeof body.image !== 'string' || body.image.length === 0) {
     return 'Missing image data';
@@ -179,6 +266,8 @@ module.exports = {
   validateSplitCreateRequest,
   validateParsedReceipt,
   isValidPayersList,
+  validateClaimRequest,
+  resolveRosterName,
   MAX_PAYERS,
   MAX_PAYER_NAME_LEN,
 };
