@@ -20,6 +20,13 @@ function getClient() {
     }
     client = createClient(url, key, {
       auth: { persistSession: false },
+      // Bilang's tables live under the dedicated `bilang` Postgres schema,
+      // not `public` (Open Item 21, decided 2026-09-29 — see
+      // supabase/schema.sql). This tells PostgREST which schema to query;
+      // the corresponding "Exposed schemas" dashboard setting (Settings ->
+      // API) must also list `bilang` in each Supabase project, or this
+      // client will get errors reaching it even though this option is set.
+      db: { schema: 'bilang' },
     });
   }
   return client;
