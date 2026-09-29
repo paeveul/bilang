@@ -144,6 +144,49 @@ test('REMOVE_PAYER — refuses to remove the last payer', () => {
   assert.equal(s2, s);
 });
 
+// --- Item 24 Step 6: roster gate actions ---
+
+test('RENAME_PAYER — renames by index and propagates into equal + manual assignments', () => {
+  let s = stateWith({ payers: ['Me', 'Person 2'] });
+  s = reducer(s, { type: 'ENSURE_ITEM_DEFAULT_ASSIGNMENT', itemId: 'i1' });
+  s = reducer(s, { type: 'SET_ITEM_MODE', itemId: 'i1', mode: 'manual' });
+  s = reducer(s, { type: 'SET_ITEM_MANUAL_VALUE', itemId: 'i1', name: 'Person 2', text: '4.00', cents: 400 });
+
+  s = reducer(s, { type: 'RENAME_PAYER', index: 1, name: 'Ben' });
+  assert.deepEqual(s.payers, ['Me', 'Ben']);
+  assert.deepEqual(s.assignments.i1.equal, ['Me', 'Ben']);
+  assert.equal(s.assignments.i1.manual.values.Ben.cents, 400);
+  assert.equal(s.assignments.i1.manual.values['Person 2'], undefined);
+});
+
+test('RENAME_PAYER — same name at that index is a true no-op', () => {
+  const s = stateWith({ payers: ['Me', 'Ben'] });
+  const s2 = reducer(s, { type: 'RENAME_PAYER', index: 1, name: 'Ben' });
+  assert.equal(s2, s);
+});
+
+test('RENAME_PAYER — out-of-range index is a no-op', () => {
+  const s = stateWith({ payers: ['Me'] });
+  const s2 = reducer(s, { type: 'RENAME_PAYER', index: 5, name: 'X' });
+  assert.equal(s2, s);
+});
+
+test('SET_CLAIM_MODE — sets the host/payers per-bill choice, no-ops when unchanged', () => {
+  let s = stateWith({ claimMode: 'host' });
+  const same = reducer(s, { type: 'SET_CLAIM_MODE', mode: 'host' });
+  assert.equal(same, s);
+
+  s = reducer(s, { type: 'SET_CLAIM_MODE', mode: 'payers' });
+  assert.equal(s.claimMode, 'payers');
+});
+
+test('RESET — restores claimMode to host', () => {
+  const s = stateWith({ claimMode: 'payers', payers: ['Me', 'Ben'] });
+  const s2 = reducer(s, { type: 'RESET' });
+  assert.equal(s2.claimMode, 'host');
+  assert.deepEqual(s2.payers, ['Me']);
+});
+
 // --- Item correction actions ---
 
 test('UPDATE_ITEM_FIELD, ADD_ITEM, REMOVE_ITEM — item correction round-trips correctly', () => {

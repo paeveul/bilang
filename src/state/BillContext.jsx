@@ -40,6 +40,8 @@ export function BillProvider({ children }) {
       setParsed: (parsed) => dispatch({ type: 'SET_PARSED', parsed }),
       addPayer: (name) => dispatch({ type: 'ADD_PAYER', name }),
       removePayer: (name) => dispatch({ type: 'REMOVE_PAYER', name }),
+      renamePayer: (index, name) => dispatch({ type: 'RENAME_PAYER', index, name }),
+      setClaimMode: (mode) => dispatch({ type: 'SET_CLAIM_MODE', mode }),
       setItemAssignment: (itemId, name, checked) =>
         dispatch({ type: 'SET_ITEM_ASSIGNMENT', itemId, name, checked }),
       ensureItemDefaultAssignment: (itemId) => dispatch({ type: 'ENSURE_ITEM_DEFAULT_ASSIGNMENT', itemId }),

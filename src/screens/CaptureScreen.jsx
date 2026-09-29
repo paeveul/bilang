@@ -1,13 +1,19 @@
 // src/screens/CaptureScreen.jsx — Item 22 Step 5 (mechanical, presentational).
 // Ported from index.html's data-screen="capture" + js/app.js's bindCapture()
 // / runParse(). Same behaviour: pick/take a photo, preview it, immediately
-// call parseReceipt() (js/api-client.js, unchanged network module — F9),
-// then hand off to the (still-stubbed, Step 8) review screen on success.
+// call parseReceipt() (js/api-client.js, unchanged network module — F9).
 //
 // parseReceipt() is called directly here, not wrapped in a new client
 // module — js/api-client.js is already the one place allowed to call
 // /api/*, and this screen calls it exactly once, matching js/app.js's
 // existing pattern.
+//
+// Item 24 Step 6: this screen no longer navigates to 'review' itself on a
+// successful parse — it only calls setParsed(). ParsingScreen.jsx now owns
+// that decision, because the roster gate living there (§1.1) means
+// "parsing finished" and "time to leave this screen" are no longer always
+// the same moment (a host who touched the gate must tap Continue first —
+// see ParsingScreen.jsx's header comment).
 import { useRef, useState } from 'react';
 import { parseReceipt } from '../../js/api-client.js';
 import { useBillActions } from '../state/BillContext.jsx';
@@ -42,7 +48,6 @@ export default function CaptureScreen() {
     try {
       const parsed = await parseReceipt(base64, mimeType);
       setParsed(parsed);
-      goToScreen('review');
     } catch (err) {
       setError(err.message || 'Could not read this receipt.');
     } finally {

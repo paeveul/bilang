@@ -140,9 +140,12 @@ function tickedOf(assignment) {
 // §5.1 point 4's collapsed-row assignment summary text — "Split 5 ways" /
 // "Assigned: Farah, Wei Jie +3" / "No one assigned yet", plus §5.1.1's live
 // remaining-to-allocate text while a manual item is still unresolved.
-function assignmentSummaryText(item, assignment, payerCount) {
+// Item 24 §1.4: in claimMode 'payers' ("let everyone pick their own"), an
+// untouched item reads "Not yet claimed" instead — it isn't a mistake to
+// fix, it's the point of that mode.
+function assignmentSummaryText(item, assignment, payerCount, claimMode) {
   const ticked = tickedOf(assignment);
-  if (ticked.length === 0) return 'No one assigned yet';
+  if (ticked.length === 0) return claimMode === 'payers' ? 'Not yet claimed' : 'No one assigned yet';
 
   if (assignment && !Array.isArray(assignment) && assignment.mode === 'manual') {
     const remaining = manualItemRemainingCents(item, assignment);
@@ -165,7 +168,7 @@ function isItemResolved(item, assignment) {
 }
 
 export default function ReviewScreen() {
-  const { parsed, payers, assignments } = useBillState();
+  const { parsed, payers, assignments, claimMode } = useBillState();
   const {
     goToScreen,
     updateItemField,
@@ -250,10 +253,16 @@ export default function ReviewScreen() {
   // Default every item to "everyone ticked, equal split" the first time
   // it's seen — same rule AssignScreen.jsx (Step 7) used, now applied here
   // since this screen is where items first arrive with an assignment at all.
+  // Item 24 §24.3 "Creator-side": skipped entirely in claimMode 'payers' —
+  // items must be leavable unassigned there so payers have something to
+  // claim on /s/:id. The host can still tick individual payers onto an item
+  // in this mode (design spec Decision 5); doing so is what locks it
+  // (C4), exactly as in 'host' mode.
   useEffect(() => {
+    if (claimMode !== 'host') return;
     items.forEach((item) => ensureItemDefaultAssignment(item.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per item set, matching prior screen's pattern
-  }, [items]);
+  }, [items, claimMode]);
 
   if (!parsed) {
     return (
@@ -265,7 +274,17 @@ export default function ReviewScreen() {
 
   const { perPerson } = computeTotals(items, assignments, parsed, payers);
 
-  const unresolvedCount = items.filter((item) => !isItemResolved(item, assignments[item.id])).length;
+  // Item 24 F3: in claimMode 'payers', a fully-unclaimed item (nobody
+  // ticked at all) is the mode working as intended, not a problem to block
+  // on — it's left for /s/:id to claim. A manual-mode item the host
+  // DID start allocating still has to be finished or reverted, in both
+  // modes: a half-entered "Set amounts" split is never a valid state to
+  // hand off to a payer link.
+  const unresolvedCount = items.filter((item) => {
+    const assignment = assignments[item.id];
+    if (claimMode === 'payers' && tickedOf(assignment).length === 0) return false;
+    return !isItemResolved(item, assignment);
+  }).length;
   // Field problems do NOT disable Confirm: a disabled button can't be
   // clicked, so it could never tell the customer *which* item to fix.
   // handleConfirm blocks instead, shows the messages and moves focus.
@@ -448,7 +467,7 @@ export default function ReviewScreen() {
                           <span className="block text-xs text-red-700">Needs fixing</span>
                         ) : (
                           <span className="block text-xs text-slate-500">
-                            {assignmentSummaryText(item, assignment, payers.length)}
+                            {assignmentSummaryText(item, assignment, payers.length, claimMode)}
                           </span>
                         )}
                       </span>

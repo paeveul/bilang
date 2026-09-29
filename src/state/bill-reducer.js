@@ -13,6 +13,17 @@ export const initialState = {
   receiptMimeType: null,
   parsed: null, // {items: [{id, name, category, qty, unit_price, line_total}], subtotal, service_charge, tax, grand_total}
   payers: ['Me'],
+  // Item 24 Q2 / §24.3 "Creator-side" — the host's per-bill choice, made on
+  // the roster gate (src/screens/RosterGate.jsx), only ever meaningful when
+  // payers.length > 1: 'host' (default, today's behaviour — the host ticks
+  // who has what, every item defaults to "everyone ticked") or 'payers'
+  // ("let everyone pick their own" — items default to UNASSIGNED, so
+  // there's something left to claim on /s/:id; the host may still tick some
+  // items themselves per the design spec's Decision 5, and anything ticked
+  // is locked exactly as in 'host' mode, C4). Read by ReviewScreen.jsx to
+  // skip its default-every-item-to-everyone effect and to relax canConfirm
+  // (F3) so an unassigned item never blocks Confirm in this mode.
+  claimMode: 'host',
   // itemId -> assignment, consumed directly by js/totals.js's
   // computeTotals() (see that file's own JSDoc for the authoritative shape
   // description). Always:
@@ -82,6 +93,42 @@ export function reducer(state, action) {
       });
       return { ...state, payers: state.payers.filter((p) => p !== action.name), assignments };
     }
+    // Item 24 Step 6 — roster gate name-row editing. Index-based (not
+    // name-based, unlike REMOVE_PAYER above) because a row being actively
+    // typed into may transiently be blank or match another row's current
+    // text before the host finishes — duplicate/blank checks are a
+    // Continue-time concern (roster-validation.js), not something this
+    // action itself rejects. In normal use this only ever runs while
+    // `assignments` is still empty (the gate lives on ParsingScreen, before
+    // any item exists to assign — see RosterGate.jsx's header comment), but
+    // it propagates the rename into any existing assignments too, the same
+    // way REMOVE_PAYER does, so it stays correct if ever dispatched later.
+    case 'RENAME_PAYER': {
+      const oldName = state.payers[action.index];
+      if (oldName === undefined || oldName === action.name) return state;
+      const payers = state.payers.map((p, i) => (i === action.index ? action.name : p));
+      const assignments = { ...state.assignments };
+      Object.keys(assignments).forEach((itemId) => {
+        const a = assignments[itemId];
+        if (!a) return;
+        if (Array.isArray(a)) {
+          assignments[itemId] = a.map((p) => (p === oldName ? action.name : p));
+          return;
+        }
+        const equal = a.equal.map((p) => (p === oldName ? action.name : p));
+        const values = { ...a.manual.values };
+        if (Object.prototype.hasOwnProperty.call(values, oldName)) {
+          values[action.name] = values[oldName];
+          delete values[oldName];
+        }
+        assignments[itemId] = { ...a, equal, manual: { ...a.manual, values } };
+      });
+      return { ...state, payers, assignments };
+    }
+    // Item 24 Q2 — the roster gate's "Who picks the items?" toggle.
+    case 'SET_CLAIM_MODE':
+      if (state.claimMode === action.mode) return state;
+      return { ...state, claimMode: action.mode };
     // Ticks/unticks a payer for an item — the single shared roster used by
     // both Equal split and Set amounts (§5.1.1 point 1). Un-ticking also
     // clears any manual value that name had typed for this item (§5.1.1
@@ -209,7 +256,7 @@ export function reducer(state, action) {
     case 'SET_ERROR':
       return { ...state, errorMessage: action.message, screen: 'error' };
     case 'RESET':
-      return { ...initialState, payers: ['Me'] };
+      return { ...initialState, payers: ['Me'], claimMode: 'host' };
     default:
       return state;
   }

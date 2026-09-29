@@ -25,13 +25,23 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { render, cleanup } from '@testing-library/react';
 import ParsingScreen from './ParsingScreen.jsx';
+import { BillProvider } from '../state/BillContext.jsx';
 
 test.afterEach(() => {
   cleanup();
 });
 
+// Item 24 Step 6: ParsingScreen now hosts the roster gate (RosterGate.jsx),
+// which reads/writes BillContext (payers, claimMode) and needs `goToScreen`
+// to auto-advance to Review — so it must render inside <BillProvider>, same
+// as every other creator-flow screen's own tests. Nothing about this
+// file's actual assertions (§22.3's no-progress-semantics contract) changes.
 test('no progress/percentage semantics anywhere in the rendered markup', () => {
-  const { container } = render(<ParsingScreen />);
+  const { container } = render(
+    <BillProvider>
+      <ParsingScreen />
+    </BillProvider>
+  );
   assert.equal(container.querySelector('[role="progressbar"]'), null);
   assert.equal(container.querySelector('[aria-valuenow]'), null);
   assert.equal(container.querySelector('[aria-valuemax]'), null);
@@ -39,7 +49,11 @@ test('no progress/percentage semantics anywhere in the rendered markup', () => {
 });
 
 test('the wait state is still communicated accessibly — role="status" with a label', () => {
-  const { container } = render(<ParsingScreen />);
+  const { container } = render(
+    <BillProvider>
+      <ParsingScreen />
+    </BillProvider>
+  );
   const status = container.querySelector('[role="status"]');
   assert.ok(status, 'a role="status" element must exist');
   assert.equal(status.getAttribute('aria-label'), 'Reading your receipt');
