@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { recomputeSplitTotals } = require('./recompute.js');
+const { recomputeSplitTotals, computeClaimTotals } = require('./recompute.js');
 const { computeTotals } = require('./totals.js');
 
 function body(overrides = {}) {
@@ -134,6 +134,53 @@ test('per_person fallback: a hostile per_person key never becomes a payer or lea
   assert.equal(JSON.stringify(r1.totals), JSON.stringify(r2.totals));
   assert.deepEqual(Object.keys(r1.totals.per_person), ['Ali']);
   assert.equal(JSON.stringify([Object.keys(Object.prototype), Object.itemsCents]), before);
+});
+
+// ---- computeClaimTotals (Item 21 Step 4: recompute inside the claim write) ----
+
+test('computeClaimTotals: uses the SAME computeTotals() arithmetic — matches recomputeSplitTotals for the same inputs', () => {
+  const b = body();
+  const fromPost = recomputeSplitTotals(b).totals;
+  const fromClaim = computeClaimTotals(b.items, b.assignments, b.totals, b.payers);
+  assert.deepEqual(fromClaim.per_person, fromPost.per_person);
+  assert.equal(fromClaim.unclaimed, fromPost.unclaimed);
+  assert.equal(fromClaim.unclaimed_items, fromPost.unclaimed_items);
+});
+
+test('computeClaimTotals: receipt-level fields (subtotal/service_charge/tax/grand_total) are carried through unchanged', () => {
+  const b = body();
+  const totals = computeClaimTotals(b.items, b.assignments, b.totals, b.payers);
+  assert.equal(totals.subtotal, b.totals.subtotal);
+  assert.equal(totals.service_charge, b.totals.service_charge);
+  assert.equal(totals.tax, b.totals.tax);
+  assert.equal(totals.grand_total, b.totals.grand_total);
+});
+
+test('computeClaimTotals: an un-claim (empty assignments) shows everyone at 0 and the whole bill as unclaimed', () => {
+  const b = body();
+  const totals = computeClaimTotals(b.items, {}, b.totals, b.payers);
+  assert.deepEqual(totals.per_person, { Ali: 0, Bea: 0 });
+  assert.equal(totals.unclaimed_items, 14);
+});
+
+test('computeClaimTotals: a shared claim (two names on one equal-split item) splits it between them', () => {
+  const b = body();
+  const totals = computeClaimTotals(
+    b.items,
+    { i1: { mode: 'equal', equal: ['Ali', 'Bea'] }, i2: { mode: 'equal', equal: ['Ali', 'Bea'] } },
+    b.totals,
+    b.payers
+  );
+  assert.ok(totals.per_person.Ali > 0 && totals.per_person.Bea > 0);
+  assert.equal(totals.unclaimed, 0);
+  const sum = totals.per_person.Ali + totals.per_person.Bea;
+  assert.equal(Math.round((sum + totals.unclaimed) * 100), Math.round(b.totals.grand_total * 100));
+});
+
+test('computeClaimTotals: never throws on a legitimate empty roster / empty items — recomputes to all-zero rather than crashing the claim write', () => {
+  const totals = computeClaimTotals([], {}, { subtotal: 0, service_charge: 0, tax: 0, grand_total: 0 }, []);
+  assert.deepEqual(totals.per_person, {});
+  assert.equal(totals.unclaimed, 0);
 });
 
 test('per_person fallback with reserved keys: they are not payers, stored per_person is exactly the real names as own keys', () => {

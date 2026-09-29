@@ -8,6 +8,7 @@
 // file that needs to change.
 
 const { createClient } = require('@supabase/supabase-js');
+const { computeClaimTotals } = require('./recompute');
 
 let client = null;
 
@@ -119,22 +120,38 @@ async function getSplit(id) {
 }
 
 /**
- * Version-guarded write of a split's assignments (compare-and-swap).
- * Applies only if the row is still at `expectedVersion`, and bumps the version
- * by one in the same statement, so a caller that read a stale row changes
- * nothing. Never writes `items` or `totals`.
+ * Version-guarded write of a split's assignments AND its recomputed totals
+ * (compare-and-swap; Item 21 Step 4 / R6). Applies only if the row is still
+ * at `expectedVersion`, and bumps the version by one in the same statement,
+ * so a caller that read a stale row changes nothing.
+ *
+ * The recompute (api/_lib/recompute.js's computeClaimTotals, itself a thin
+ * wrapper over the shared api/_lib/totals.js arithmetic) runs just before
+ * the write and its result is written in the SAME `update()` call as
+ * `assignments` — one statement, guarded by the same `WHERE version =
+ * expectedVersion`. If the compare-and-swap does not apply (the version
+ * moved), this statement matches zero rows and NEITHER the claim NOR the
+ * totals are written — there is no window in which one lands without the
+ * other. Never writes `items`, the roster, or the receipt-level totals
+ * fields (subtotal/service_charge/tax/grand_total): those are immutable
+ * after creation and are carried through unchanged by computeClaimTotals.
  *
  * @param {string} id
  * @param {number} expectedVersion - the version the caller read
  * @param {object} assignments - the complete new assignments object
+ * @param {Array<object>} items - the split's items, as read alongside `assignments`
+ * @param {string[]} payers - the split's roster, as read alongside `assignments`
+ * @param {object} billTotals - the split's current `totals`, as read alongside `assignments`
  * @returns {Promise<{assignments: object, totals: object, version: number}|null>}
- *   the updated row, or null if nobody matched (the version moved, or the row is gone)
+ *   the updated row (with its freshly recomputed `totals`), or null if
+ *   nobody matched (the version moved, or the row is gone)
  */
-async function claimSplitItem(id, expectedVersion, assignments) {
+async function claimSplitItem(id, expectedVersion, assignments, items = [], payers = [], billTotals = {}) {
+  const totals = computeClaimTotals(items, assignments, billTotals, payers);
   const supabase = getClient();
   const { data, error } = await supabase
     .from('splits')
-    .update({ assignments, version: expectedVersion + 1 })
+    .update({ assignments, totals, version: expectedVersion + 1 })
     .eq('id', id)
     .eq('version', expectedVersion)
     .select('assignments, totals, version');

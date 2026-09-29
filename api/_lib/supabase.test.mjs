@@ -133,35 +133,90 @@ test('migration not applied: getSplit falls back to the original columns', async
   }
 });
 
-test('claimSplitItem: applies at the expected version and bumps it by one', async () => {
+// Item 21 Step 4: claimSplitItem recomputes `totals` from the new
+// assignments (via api/_lib/recompute.js's computeClaimTotals, itself a thin
+// wrapper over api/_lib/totals.js's computeTotals — the same arithmetic the
+// POST path and the browser preview use) and writes it in the SAME update()
+// call as `assignments`, guarded by the same `version` compare-and-swap.
+const items = [{ id: 'i1', name: 'Nasi', category: 'food', qty: 1, unit_price: 10, line_total: 10 }];
+const payers = ['A', 'B'];
+const billTotals = { subtotal: 10, service_charge: 0, tax: 0, grand_total: 10 };
+
+test('claimSplitItem: applies at the expected version, bumps it by one, and recomputes totals in the SAME write', async () => {
   const next = { i1: { mode: 'equal', equal: ['A'] } };
-  const row = await claimSplitItem('x', 4, next);
-  assert.deepEqual(row, { assignments: next, totals: { grand_total: 10 }, version: 5 });
+  const row = await claimSplitItem('x', 4, next, items, payers, billTotals);
+  assert.deepEqual(row.assignments, next);
+  assert.equal(row.version, 5);
+  // The recomputed totals: A holds i1 (RM10) in full, B holds nothing;
+  // nothing is unclaimed (the only item is assigned).
+  assert.deepEqual(row.totals.per_person, { A: 10, B: 0 });
+  assert.equal(row.totals.unclaimed, 0);
+  assert.equal(row.totals.unclaimed_items, 0);
+  // The receipt-level fields are carried through unchanged.
+  assert.equal(row.totals.subtotal, 10);
+  assert.equal(row.totals.grand_total, 10);
   assert.deepEqual(calls[0].filters, { id: 'x', version: 4 });
-  assert.deepEqual(Object.keys(calls[0].patch).sort(), ['assignments', 'version']);
+  // The write is one statement: assignments, totals and version together.
+  assert.deepEqual(Object.keys(calls[0].patch).sort(), ['assignments', 'totals', 'version']);
+  assert.deepEqual(calls[0].patch.totals.per_person, { A: 10, B: 0 });
   assert.equal(stateRow.version, 5);
+  assert.deepEqual(stateRow.totals.per_person, { A: 10, B: 0 });
 });
 
-test('claimSplitItem: a stale version changes nothing and returns null', async () => {
-  const row = await claimSplitItem('x', 3, { i1: ['A'] });
+test('claimSplitItem: an un-claim (item now unassigned) recomputes totals to nobody charged and the item unclaimed', async () => {
+  // A had claimed i1; now nobody does.
+  const row = await claimSplitItem('x', 4, {}, items, payers, billTotals);
+  assert.deepEqual(row.totals.per_person, { A: 0, B: 0 });
+  assert.equal(row.totals.unclaimed, 10);
+  assert.equal(row.totals.unclaimed_items, 10);
+});
+
+test('claimSplitItem: a shared claim splits the recomputed total correctly', async () => {
+  const next = { i1: { mode: 'equal', equal: ['A', 'B'] } };
+  const row = await claimSplitItem('x', 4, next, items, payers, billTotals);
+  assert.deepEqual(row.totals.per_person, { A: 5, B: 5 });
+  assert.equal(row.totals.unclaimed, 0);
+});
+
+test('claimSplitItem: a stale version changes nothing, recomputes nothing stored, and returns null', async () => {
+  const row = await claimSplitItem('x', 3, { i1: ['A'] }, items, payers, billTotals);
   assert.equal(row, null);
   assert.deepEqual(stateRow.assignments, { i1: [] });
   assert.equal(stateRow.version, 4);
+  assert.deepEqual(stateRow.totals, { grand_total: 10 }); // untouched: the CAS matched zero rows
 });
 
-test('claimSplitItem: two writers from the same version, exactly one wins', async () => {
+test('claimSplitItem: two writers from the same version, exactly one wins, and its totals are what land', async () => {
   const [a, b] = await Promise.all([
-    claimSplitItem('x', 4, { i1: ['A'] }),
-    claimSplitItem('x', 4, { i1: ['B'] }),
+    claimSplitItem('x', 4, { i1: { mode: 'equal', equal: ['A'] } }, items, payers, billTotals),
+    claimSplitItem('x', 4, { i1: { mode: 'equal', equal: ['B'] } }, items, payers, billTotals),
   ]);
-  assert.equal([a, b].filter(Boolean).length, 1);
+  const results = [a, b].filter(Boolean);
+  assert.equal(results.length, 1);
   assert.equal(stateRow.version, 5);
+  // Whichever assignment actually landed, its totals (not the loser's) are
+  // what is stored: exactly the winning claimant is charged the RM10, the
+  // other pays nothing.
+  const winner = results[0];
+  const winnerName = winner.assignments.i1.equal[0];
+  assert.equal(winner.totals.per_person[winnerName], 10);
+  const otherName = winnerName === 'A' ? 'B' : 'A';
+  assert.equal(winner.totals.per_person[otherName], 0);
+  assert.deepEqual(stateRow.totals.per_person, winner.totals.per_person);
+});
+
+test('claimSplitItem: called with no items/payers/billTotals (legacy call shape) does not throw', async () => {
+  // Defensive defaults only — real production callers (api/split.js) always
+  // pass the real split's items/payers/totals.
+  const row = await claimSplitItem('x', 4, { i1: ['A'] });
+  assert.equal(row.version, 5);
+  assert.deepEqual(row.totals.per_person, {});
 });
 
 test('claimSplitItem: a database error is thrown, not swallowed', async () => {
   hasNewColumns = false;
   await assert.rejects(
-    () => claimSplitItem('x', 4, {}),
+    () => claimSplitItem('x', 4, {}, items, payers, billTotals),
     (e) => e.code === '42703'
   );
 });

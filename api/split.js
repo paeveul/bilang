@@ -149,9 +149,10 @@ async function handlePost(req, res) {
  * Claim or un-claim one item. Read the row, decide in api/_lib/claim.js, then
  * write with claimSplitItem, which applies only if `version` has not moved
  * since the read. A lost race is re-read and re-decided (max 3 attempts); if
- * the item was taken meanwhile the re-decision is a calm 409. Stored `totals`
- * are returned as stored: recomputing them inside this write is Item 21
- * Step 4, which lands directly after this item.
+ * the item was taken meanwhile the re-decision is a calm 409. claimSplitItem
+ * recomputes `totals` from the new `assignments` (Item 21 Step 4 / R6) and
+ * writes them in the same version-guarded statement as the claim, so a
+ * stored claim and its stored totals can never disagree.
  */
 async function handlePatch(req, res) {
   // Release switch. CLAIMS_ENABLED must be exactly the string 'true'; unset or
@@ -218,7 +219,14 @@ async function handlePatch(req, res) {
         return;
       }
 
-      const row = await claimSplitItem(id, split.version, decision.assignments);
+      const row = await claimSplitItem(
+        id,
+        split.version,
+        decision.assignments,
+        split.items,
+        split.payers,
+        split.totals
+      );
       if (row) {
         res.status(200).json({ assignments: row.assignments, totals: row.totals, version: row.version });
         return;
