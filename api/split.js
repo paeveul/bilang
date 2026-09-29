@@ -27,17 +27,10 @@ const {
 } = require('./_lib/validate');
 const { decideClaim } = require('./_lib/claim');
 const { recomputeSplitTotals } = require('./_lib/recompute');
+const { pollRateLimited } = require('./_lib/ratelimit-poll');
 
 const RETENTION_DAYS = Number(process.env.RETENTION_DAYS || 30);
 const MAX_CLAIM_ATTEMPTS = 3;
-
-// Polling limiter slot (Item 24 Step 5). GET and PATCH share one limiter,
-// api/_lib/ratelimit-poll.js, which does not exist yet: until Step 5 replaces
-// this body, nothing is ever limited and the 429 branch below cannot fire.
-// Must resolve true when the request should be refused.
-async function pollRateLimited(req) {
-  return false;
-}
 
 // Check order: method dispatch -> (GET/PATCH) poll limiter -> (PATCH) release
 // switch CLAIMS_ENABLED -> body/query validation -> data access. POST keeps its own order inside handlePost.
