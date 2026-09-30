@@ -17,6 +17,22 @@
 // in spirit from the Item 22 Step 6 build. THE SECURITY FIX for item.qty
 // (payer-item-row.js) is reused there, untouched — see that file's header
 // comment and its kept test, payer-item-row.security.test.mjs.
+//
+// Item 23 (merchant name + receipt date), placement decided by Amelia
+// 2026-09-29 (functional-only, per Alex's scoping — visual redesign is a
+// later, separate pass and must never compromise functionality; see
+// bilang-pm-tracker.md §7 Change Log 2.56): both lines sit between the
+// "Pick your items" heading and whichever state block follows (identity
+// strip or roster card), rendering once regardless of state, reusing
+// existing classes (`text-sm text-slate-600` for the name, `text-xs
+// text-slate-500` for the date — NOT the h2's own `text-xl font-bold`, so
+// these two lines never read as a second heading). Same absent-value rule
+// as ReviewScreen (D6/D7): the line is simply missing when the value is
+// null, no placeholder, no layout gap (`space-y-4` on the parent section).
+// Applied to the claiming-available header below AND, for consistency
+// (Alex/Amelia did not ask about the read-only fallback specifically — a
+// judgment call, see this file's dispatch report), to the read-only
+// fallback's "Bill split" header too.
 import { useEffect, useRef, useState } from 'react';
 import { computeTotals, formatRM, fromCents } from '../../js/totals.js';
 import { usePolledSplit } from '../hooks/usePolledSplit.js';
@@ -262,6 +278,8 @@ export default function PayerScreen({ id }) {
     return (
       <section data-screen="payer" className="app-screen py-8 space-y-4">
         <h2 className="text-xl font-bold">Bill split</h2>
+        {split.merchant_name && <p className="text-sm text-slate-600">{split.merchant_name}</p>}
+        {split.receipt_date && <p className="text-xs text-slate-500">{split.receipt_date}</p>}
         {!hasRoster ? null : (
           <p className="text-sm text-slate-600" role="status">
             This bill can't be picked from. You can still see what everyone owes.
@@ -314,6 +332,8 @@ export default function PayerScreen({ id }) {
     <section data-screen="payer" className="app-screen pb-28 space-y-4">
       <LiveAnnouncer message={liveMessage} />
       <h2 className="text-xl font-bold">Pick your items</h2>
+      {split.merchant_name && <p className="text-sm text-slate-600">{split.merchant_name}</p>}
+      {split.receipt_date && <p className="text-xs text-slate-500">{split.receipt_date}</p>}
 
       {me && (
         <div className="sticky top-0 z-10 bg-slate-50 -mx-4 px-4 py-2 flex justify-between items-center text-sm">

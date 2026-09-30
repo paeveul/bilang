@@ -28,6 +28,36 @@ test('payload carries the ordered payers list', () => {
   assert.equal(body.ownerPaymentHandle, 'DuitNow 012');
 });
 
+// --- Item 23: merchant_name / receipt_date round-trip through the payload ---
+
+test('payload carries merchantName/receiptDate through from parsed.merchant_name/receipt_date', () => {
+  const body = buildSplitPayload({
+    parsed: { ...parsed, merchant_name: 'Restoran Uncle', receipt_date: '2026-09-28' },
+    payers: ['Ali', 'Bea'],
+    assignments,
+    ownerPaymentHandle: 'x',
+  });
+  assert.equal(body.merchantName, 'Restoran Uncle');
+  assert.equal(body.receiptDate, '2026-09-28');
+});
+
+test('payload passes through explicit nulls (read but illegible) rather than dropping them', () => {
+  const body = buildSplitPayload({
+    parsed: { ...parsed, merchant_name: null, receipt_date: null },
+    payers: ['Ali', 'Bea'],
+    assignments,
+    ownerPaymentHandle: 'x',
+  });
+  assert.equal(body.merchantName, null);
+  assert.equal(body.receiptDate, null);
+});
+
+test('payload omits merchantName/receiptDate (stays undefined) when parsed never had them', () => {
+  const body = buildSplitPayload({ parsed, payers: ['Ali', 'Bea'], assignments, ownerPaymentHandle: 'x' });
+  assert.equal(body.merchantName, undefined);
+  assert.equal(body.receiptDate, undefined);
+});
+
 test('payers is a copy, not the live state array', () => {
   const payers = ['Ali', 'Bea'];
   const body = buildSplitPayload({ parsed, payers, assignments, ownerPaymentHandle: 'x' });

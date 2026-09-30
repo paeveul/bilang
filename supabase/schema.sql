@@ -110,6 +110,24 @@ alter table bilang.splits add column if not exists version integer not null defa
 --   alter table bilang.splits drop column if exists version;
 --   alter table bilang.splits drop column if exists payers;
 
+-- Item 23 (merchant name + receipt date) — additive columns on
+-- `bilang.splits`. Same idempotent pattern as the payers/version columns
+-- above: safe to re-run, safe on a database that already holds rows
+-- (existing splits get both columns NULL, nothing backfilled). No index on
+-- either (§15.4 — neither is ever queried or filtered on; D3). Targets
+-- `bilang.splits`, not `public.splits`, for the same reason as the block
+-- above: by the time anyone runs this file the table has already moved to
+-- `bilang`.
+--   merchant_name — restaurant/merchant name exactly as printed, if legible.
+--   receipt_date  — receipt date, if legible.
+alter table bilang.splits add column if not exists merchant_name text;
+alter table bilang.splits add column if not exists receipt_date date;
+--
+-- Rollback (manual; destroys any stored merchant name / receipt date, so
+-- only before this item ships or if the data is disposable):
+--   alter table bilang.splits drop column if exists receipt_date;
+--   alter table bilang.splits drop column if exists merchant_name;
+
 -- Speeds up the future MVP-3 cleanup job's `WHERE expires_at < now()` sweep.
 create index if not exists splits_expires_at_idx on bilang.splits (expires_at);
 

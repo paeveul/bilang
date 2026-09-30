@@ -61,6 +61,19 @@ const RECEIPT_TOOL = {
         type: 'number',
         description: 'Final total printed on the receipt, in RM.',
       },
+      // Item 23 (merchant name + receipt date) — D1: both optional, left out
+      // of `required` below. A receipt can be cropped or faded exactly where
+      // the name or date sits, and a guessed value is worse than none, same
+      // "never invent a number/value you cannot read" doctrine the rest of
+      // this schema already follows.
+      merchant_name: {
+        type: 'string',
+        description: 'Restaurant/merchant name exactly as printed, if legible.',
+      },
+      receipt_date: {
+        type: 'string',
+        description: 'Receipt date in ISO YYYY-MM-DD format, if legible. Convert from whatever format is printed.',
+      },
     },
     required: ['items', 'subtotal', 'service_charge', 'tax', 'grand_total'],
     additionalProperties: false,
@@ -112,9 +125,11 @@ async function parseReceipt(base64Image, mediaType) {
             text:
               'This is a photo of a Malaysian restaurant/mamak receipt. Extract every line ' +
               'item with its category, quantity, unit price, and line total, plus the ' +
-              'subtotal, service charge, tax, and grand total. The receipt may be faded ' +
-              'thermal paper, handwritten, or photographed at an angle — do your best, but ' +
-              'never invent a number you cannot actually read.',
+              'subtotal, service charge, tax, and grand total. Also extract the merchant ' +
+              'name and the receipt date (convert to ISO YYYY-MM-DD) if legible, leaving ' +
+              'them out otherwise. The receipt may be faded thermal paper, handwritten, or ' +
+              'photographed at an angle — do your best, but never invent a number or value ' +
+              'you cannot actually read.',
           },
         ],
       },

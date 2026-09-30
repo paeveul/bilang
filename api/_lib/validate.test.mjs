@@ -175,6 +175,40 @@ test('payers: hidden ceiling of 200 people, plain rejection above it', () => {
   assert.equal(validateSplitCreateRequest(validSplitBody({ payers: roster(201) })), 'Invalid payers list');
 });
 
+// --- validateSplitCreateRequest: merchantName / receiptDate (Item 23, D4/D6) ---
+
+test('merchantName/receiptDate are optional; omitting both still passes', () => {
+  assert.equal(validateSplitCreateRequest(validSplitBody()), null);
+});
+
+test('merchantName/receiptDate: explicit null (read but illegible) is accepted', () => {
+  assert.equal(validateSplitCreateRequest(validSplitBody({ merchantName: null, receiptDate: null })), null);
+});
+
+test('merchantName/receiptDate: valid values are accepted', () => {
+  assert.equal(
+    validateSplitCreateRequest(validSplitBody({ merchantName: 'Restoran Uncle', receiptDate: '2026-09-28' })),
+    null
+  );
+});
+
+test('merchantName: rejects a non-string', () => {
+  assert.equal(validateSplitCreateRequest(validSplitBody({ merchantName: 123 })), 'Invalid merchant name');
+});
+
+test('merchantName: rejects a string over 200 chars', () => {
+  assert.equal(validateSplitCreateRequest(validSplitBody({ merchantName: 'x'.repeat(201) })), 'Invalid merchant name');
+});
+
+test('receiptDate: rejects a non-ISO-formatted string', () => {
+  assert.equal(validateSplitCreateRequest(validSplitBody({ receiptDate: '28/09/2026' })), 'Invalid receipt date');
+  assert.equal(validateSplitCreateRequest(validSplitBody({ receiptDate: '2026-9-28' })), 'Invalid receipt date');
+});
+
+test('receiptDate: rejects a non-string', () => {
+  assert.equal(validateSplitCreateRequest(validSplitBody({ receiptDate: 20260928 })), 'Invalid receipt date');
+});
+
 // --- validateClaimRequest (PATCH /api/split, Item 24 Step 3) ---
 
 const claimSplit = { items: [{ id: 'i1' }, { id: 'i2' }], payers: ['Ali', 'Bea', ' Cy '] };

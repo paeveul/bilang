@@ -210,6 +210,21 @@ function validateSplitCreateRequest(body) {
       return 'Invalid payers list';
     }
   }
+  // Item 23, D4/D6: both genuinely optional (undefined = "no opinion",
+  // null = "read but illegible") — round-tripped from whatever
+  // api/parse.js returned, same pattern as items/assignments/totals. Only
+  // type/shape/length are checked here, same defensive-but-lightweight
+  // posture as every other optional field on this request.
+  if (body.merchantName !== undefined && body.merchantName !== null) {
+    if (typeof body.merchantName !== 'string' || body.merchantName.length > MAX_STRING_LEN) {
+      return 'Invalid merchant name';
+    }
+  }
+  if (body.receiptDate !== undefined && body.receiptDate !== null) {
+    if (typeof body.receiptDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.receiptDate)) {
+      return 'Invalid receipt date';
+    }
+  }
   if (typeof body.ownerPaymentHandle !== 'string' || body.ownerPaymentHandle.trim().length === 0) {
     return "Missing the bill owner's payment details";
   }

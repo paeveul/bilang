@@ -1,6 +1,8 @@
 // api/_lib/supabase.test.mjs — createSplit / getSplit against a stubbed
 // Supabase client, including a database that has not had the payers/version
-// migration applied yet.
+// migration applied yet, and (Item 23) one that has not had the
+// merchant_name/receipt_date migration applied yet — independently of each
+// other, since either can land before the other on a real database.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,9 +10,18 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 
-let hasNewColumns = true;
+// Two independent migration flags — Item 24's payers/version columns and
+// Item 23's merchant_name/receipt_date columns can each be present or absent
+// on a given database regardless of the other.
+let hasRosterColumns = true;
+let hasReceiptColumns = true;
 let stateRow = null;
 const calls = [];
+
+function missingColumnError(column) {
+  return { code: '42703', message: `column splits.${column} does not exist` };
+}
+
 const sdkPath = require.resolve('@supabase/supabase-js');
 require.cache[sdkPath] = {
   id: sdkPath,
@@ -23,11 +34,11 @@ require.cache[sdkPath] = {
           select: () => ({
             single: async () => {
               calls.push({ op: 'insert', row });
-              if (!hasNewColumns && 'payers' in row) {
-                return {
-                  data: null,
-                  error: { code: 'PGRST204', message: 'Could not find the payers column of splits in the schema cache' },
-                };
+              if (!hasRosterColumns && 'payers' in row) {
+                return { data: null, error: missingColumnError('payers') };
+              }
+              if (!hasReceiptColumns && ('merchant_name' in row || 'receipt_date' in row)) {
+                return { data: null, error: missingColumnError('merchant_name') };
               }
               return { data: { ...row }, error: null };
             },
@@ -42,7 +53,7 @@ require.cache[sdkPath] = {
             },
             select: async (columns) => {
               calls.push({ op: 'update', patch, filters: { ...filters }, columns });
-              if (!hasNewColumns) {
+              if (!hasRosterColumns) {
                 return { data: null, error: { code: '42703', message: 'column splits.version does not exist' } };
               }
               if (stateRow && stateRow.id === filters.id && stateRow.version === filters.version) {
@@ -61,11 +72,19 @@ require.cache[sdkPath] = {
           eq: () => ({
             maybeSingle: async () => {
               calls.push({ op: 'select', columns });
-              if (!hasNewColumns && /payers|version/.test(columns)) {
-                return { data: null, error: { code: '42703', message: 'column splits.payers does not exist' } };
+              if (!hasReceiptColumns && /merchant_name|receipt_date/.test(columns)) {
+                return { data: null, error: missingColumnError('merchant_name') };
+              }
+              if (!hasRosterColumns && /payers|version/.test(columns)) {
+                return { data: null, error: missingColumnError('payers') };
               }
               const row = { id: 'x', items: [], assignments: {}, totals: {}, owner_payment_handle: 'h', created_at: 't', expires_at: null };
-              return { data: hasNewColumns ? { ...row, payers: ['A', 'B'], version: 0 } : row, error: null };
+              const withRoster = hasRosterColumns ? { ...row, payers: ['A', 'B'], version: 0 } : row;
+              const withReceipt =
+                hasReceiptColumns && /merchant_name|receipt_date/.test(columns)
+                  ? { ...withRoster, merchant_name: 'Restoran Uncle', receipt_date: '2026-09-30' }
+                  : withRoster;
+              return { data: withReceipt, error: null };
             },
           }),
         }),
@@ -81,7 +100,8 @@ const base = { id: 'x', items: [], assignments: {}, totals: {}, ownerPaymentHand
 
 beforeEach(() => {
   calls.length = 0;
-  hasNewColumns = true;
+  hasRosterColumns = true;
+  hasReceiptColumns = true;
   stateRow = { id: 'x', assignments: { i1: [] }, totals: { grand_total: 10 }, version: 4 };
 });
 
@@ -105,7 +125,7 @@ test('getSplit selects payers and version and returns them', async () => {
 });
 
 test('migration not applied: createSplit retries without payers and succeeds', async () => {
-  hasNewColumns = false;
+  hasRosterColumns = false;
   const warn = console.warn;
   console.warn = () => {};
   try {
@@ -118,16 +138,101 @@ test('migration not applied: createSplit retries without payers and succeeds', a
   }
 });
 
-test('migration not applied: getSplit falls back to the original columns', async () => {
-  hasNewColumns = false;
+test('migration not applied: getSplit falls back to the original columns (both migrations missing)', async () => {
+  hasRosterColumns = false;
+  hasReceiptColumns = false;
   const warn = console.warn;
   console.warn = () => {};
   try {
     const row = await getSplit('x');
     assert.equal(row.id, 'x');
     assert.equal(row.payers, undefined);
+    assert.equal(row.merchant_name, undefined);
+    // Three read attempts: full -> roster-only (still fails, roster is also
+    // missing) -> bare SPLIT_COLUMNS (succeeds).
+    assert.equal(calls.length, 3);
+    assert.doesNotMatch(calls[2].columns, /payers|version|merchant_name|receipt_date/);
+  } finally {
+    console.warn = warn;
+  }
+});
+
+// Item 23 — merchant_name/receipt_date. Both new tests below exercise the
+// column set independently of payers/version, per D4's persistence spec and
+// this item's graceful-fallback requirement (real split rows exist
+// post-Item-24, so this item cannot assume its own migration landed first).
+
+test('createSplit stores merchant_name and receipt_date when provided', async () => {
+  const row = await createSplit({ ...base, merchantName: 'Restoran Uncle', receiptDate: '2026-09-28' });
+  assert.equal(calls[0].row.merchant_name, 'Restoran Uncle');
+  assert.equal(calls[0].row.receipt_date, '2026-09-28');
+  assert.equal(row.merchant_name, 'Restoran Uncle');
+});
+
+test('createSplit stores an explicit null (read but illegible) rather than omitting the column', async () => {
+  await createSplit({ ...base, merchantName: null, receiptDate: null });
+  assert.equal('merchant_name' in calls[0].row, true);
+  assert.equal(calls[0].row.merchant_name, null);
+  assert.equal(calls[0].row.receipt_date, null);
+});
+
+test('createSplit without merchantName/receiptDate does not send those columns', async () => {
+  await createSplit(base);
+  assert.equal('merchant_name' in calls[0].row, false);
+  assert.equal('receipt_date' in calls[0].row, false);
+  assert.equal(calls.length, 1);
+});
+
+test('getSplit selects merchant_name and receipt_date and returns them', async () => {
+  const row = await getSplit('x');
+  assert.match(calls[0].columns, /merchant_name, receipt_date/);
+  assert.equal(row.merchant_name, 'Restoran Uncle');
+  assert.equal(row.receipt_date, '2026-09-30');
+});
+
+test('receipt migration not applied (roster migration IS applied): createSplit retries without merchant_name/receipt_date and keeps payers', async () => {
+  hasReceiptColumns = false;
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const row = await createSplit({ ...base, payers: ['A', 'B'], merchantName: 'Restoran Uncle', receiptDate: '2026-09-28' });
+    assert.equal(row.id, 'x');
     assert.equal(calls.length, 2);
-    assert.doesNotMatch(calls[1].columns, /payers|version/);
+    assert.equal('merchant_name' in calls[1].row, false);
+    assert.deepEqual(calls[1].row.payers, ['A', 'B']);
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test('receipt migration not applied (roster migration IS applied): getSplit falls back to roster columns only, in one retry', async () => {
+  hasReceiptColumns = false;
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const row = await getSplit('x');
+    assert.equal(row.id, 'x');
+    assert.equal(row.merchant_name, undefined);
+    assert.deepEqual(row.payers, ['A', 'B']);
+    assert.equal(calls.length, 2);
+    assert.doesNotMatch(calls[1].columns, /merchant_name|receipt_date/);
+    assert.match(calls[1].columns, /payers, version/);
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test('neither migration applied: createSplit cascades all the way down to the bare row', async () => {
+  hasRosterColumns = false;
+  hasReceiptColumns = false;
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const row = await createSplit({ ...base, payers: ['A', 'B'], merchantName: 'Restoran Uncle', receiptDate: '2026-09-28' });
+    assert.equal(row.id, 'x');
+    assert.equal(calls.length, 3);
+    assert.equal('merchant_name' in calls[2].row, false);
+    assert.equal('payers' in calls[2].row, false);
   } finally {
     console.warn = warn;
   }
@@ -214,7 +319,7 @@ test('claimSplitItem: called with no items/payers/billTotals (legacy call shape)
 });
 
 test('claimSplitItem: a database error is thrown, not swallowed', async () => {
-  hasNewColumns = false;
+  hasRosterColumns = false;
   await assert.rejects(
     () => claimSplitItem('x', 4, {}, items, payers, billTotals),
     (e) => e.code === '42703'

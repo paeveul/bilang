@@ -71,6 +71,13 @@ async function handleGet(req, res) {
       version: split.version ?? 0,
       ownerPaymentHandle: split.owner_payment_handle,
       createdAt: split.created_at,
+      // Item 23, D7 — kept snake_case (unlike ownerPaymentHandle/createdAt
+      // above) to match `parsed.merchant_name`/`parsed.receipt_date` on the
+      // review screen (§23.3) and the column names themselves — display-only,
+      // absent (not a placeholder) when the column is missing (an old split)
+      // or the value itself was never read.
+      merchant_name: split.merchant_name ?? null,
+      receipt_date: split.receipt_date ?? null,
     });
   } catch (err) {
     console.error('api/split.js GET error:', err);
@@ -100,7 +107,7 @@ async function handlePost(req, res) {
     return;
   }
 
-  const { items, payers, ownerPaymentHandle } = req.body;
+  const { items, payers, ownerPaymentHandle, merchantName, receiptDate } = req.body;
   // `claimed` marks a payer-made claim (api/_lib/claim.js) and is set only by
   // the PATCH path. Strip it from anything the creator submits so a host-set
   // dish can never pass as a payer claim.
@@ -124,7 +131,7 @@ async function handlePost(req, res) {
   const expiresAt = new Date(Date.now() + RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   try {
-    await createSplit({ id, items, assignments, totals, payers, ownerPaymentHandle, expiresAt });
+    await createSplit({ id, items, assignments, totals, payers, ownerPaymentHandle, expiresAt, merchantName, receiptDate });
 
     // Roadmap F7(a) — anonymised analytics capture, MVP-1 scope. Fire-and-
     // forget, alongside (not instead of) the operational persist above. No

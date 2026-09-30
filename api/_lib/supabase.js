@@ -35,13 +35,20 @@ function getClient() {
 
 const SPLIT_COLUMNS = 'id, items, assignments, totals, owner_payment_handle, created_at, expires_at';
 const SPLIT_COLUMNS_WITH_ROSTER = `${SPLIT_COLUMNS}, payers, version`;
+// Item 23 (merchant name + receipt date) — a third, further-additive column
+// set, same layering the payers/version columns already established: try
+// the widest select first, fall back a step at a time if a migration hasn't
+// landed on this database yet. See getSplit()'s fallback chain below.
+const SPLIT_COLUMNS_WITH_ROSTER_AND_RECEIPT = `${SPLIT_COLUMNS_WITH_ROSTER}, merchant_name, receipt_date`;
 
 // True when the database rejected a statement because a column does not exist
 // (Postgres 42703, or PostgREST's schema-cache miss PGRST204).
 function isMissingColumnError(error) {
   if (!error) return false;
   if (error.code === '42703' || error.code === 'PGRST204') return true;
-  return /column .*(payers|version)|(payers|version).* column/i.test(String(error.message || ''));
+  return /column .*(payers|version|merchant_name|receipt_date)|(payers|version|merchant_name|receipt_date).* column/i.test(
+    String(error.message || '')
+  );
 }
 
 const warned = new Set();
@@ -62,9 +69,22 @@ function warnOnce(key, message) {
  * @param {object} params.totals
  * @param {string} params.ownerPaymentHandle
  * @param {string} params.expiresAt - ISO timestamp
+ * @param {string} [params.merchantName] - Item 23, D4. Omit (undefined) to
+ *   skip the column entirely; pass null explicitly for "read but illegible".
+ * @param {string} [params.receiptDate] - Item 23, D4. Same undefined/null rule.
  * @returns {Promise<object>} the inserted row
  */
-async function createSplit({ id, items, assignments, totals, payers, ownerPaymentHandle, expiresAt }) {
+async function createSplit({
+  id,
+  items,
+  assignments,
+  totals,
+  payers,
+  ownerPaymentHandle,
+  expiresAt,
+  merchantName,
+  receiptDate,
+}) {
   const supabase = getClient();
   const row = {
     id,
@@ -76,23 +96,45 @@ async function createSplit({ id, items, assignments, totals, payers, ownerPaymen
   };
   const insert = (r) => supabase.from('splits').insert(r).select().single();
 
-  if (payers === undefined) {
-    const { data, error } = await insert(row);
-    if (error) throw error;
-    return data;
+  const withPayers = payers === undefined ? row : { ...row, payers };
+  // Item 23, D4: same undefined-means-"don't send the column" convention as
+  // payers above. A caller that DID get a value from parse (even a null —
+  // "read but illegible") passes it through; a caller with no opinion on
+  // these two fields at all (legacy call shape) omits them.
+  const withReceipt =
+    merchantName === undefined && receiptDate === undefined
+      ? withPayers
+      : { ...withPayers, merchant_name: merchantName ?? null, receipt_date: receiptDate ?? null };
+
+  const { data, error } = await insert(withReceipt);
+  if (!error) return data;
+  if (!isMissingColumnError(error)) throw error;
+
+  // Progressively narrower column sets, in case only some of Item 23's /
+  // Item 24's additive migrations have landed on this database yet — same
+  // graceful-fallback discipline the payers/version columns established
+  // (real split rows exist post-Item-24, so a hard migration-order
+  // dependency here would break existing writes).
+  if (withReceipt !== withPayers) {
+    warnOnce(
+      'write-receipt',
+      'splits.merchant_name / splits.receipt_date columns are missing; storing splits without them until the migration is applied'
+    );
+    const retry = await insert(withPayers);
+    if (!retry.error) return retry.data;
+    if (!isMissingColumnError(retry.error)) throw retry.error;
   }
 
-  const { data, error } = await insert({ ...row, payers });
-  if (error && isMissingColumnError(error)) {
+  if (withPayers !== row) {
     // The payers column has not been added to this database yet: store the
     // split without it so creation keeps working until the migration is applied.
     warnOnce('write', 'splits.payers column is missing; storing splits without a roster until the migration is applied');
-    const retry = await insert(row);
-    if (retry.error) throw retry.error;
-    return retry.data;
+    const retry2 = await insert(row);
+    if (retry2.error) throw retry2.error;
+    return retry2.data;
   }
-  if (error) throw error;
-  return data;
+
+  throw error;
 }
 
 /**
@@ -107,9 +149,18 @@ async function getSplit(id) {
   const supabase = getClient();
   const read = (columns) => supabase.from('splits').select(columns).eq('id', id).maybeSingle();
 
-  let { data, error } = await read(SPLIT_COLUMNS_WITH_ROSTER);
+  let { data, error } = await read(SPLIT_COLUMNS_WITH_ROSTER_AND_RECEIPT);
   if (error && isMissingColumnError(error)) {
-    // payers / version are not in this database yet: read the original columns.
+    // Item 23's merchant_name / receipt_date are not in this database yet:
+    // step down to the roster columns only.
+    warnOnce(
+      'read-receipt',
+      'splits.merchant_name / splits.receipt_date columns are missing; reading splits without them until the migration is applied'
+    );
+    ({ data, error } = await read(SPLIT_COLUMNS_WITH_ROSTER));
+  }
+  if (error && isMissingColumnError(error)) {
+    // payers / version are not in this database yet either: read the original columns.
     warnOnce('read', 'splits.payers / splits.version columns are missing; reading splits without them until the migration is applied');
     ({ data, error } = await read(SPLIT_COLUMNS));
   }

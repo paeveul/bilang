@@ -65,10 +65,11 @@
 //     NOT the two-direction Ledger/Statement token system §4/§6 of the
 //     design spec describes — no other screen in this app has that system
 //     wired in yet either, so this isn't a Step-8-specific corner cut.
-//   - Merchant name / receipt date (§5.1 point 1's header) aren't in the
-//     current data model — now Item 23's confirmed, separately-tracked
-//     scope (bilang-mvp1-implementation-plans.md#item-23), not built here.
-//     The header still shows the trust copy and remaining-indicator only.
+//   - Merchant name / receipt date (§5.1 point 1's header) — Item 23
+//     (bilang-mvp1-implementation-plans.md#item-23) built this pass: a
+//     prominent heading above "Check the items" plus a caption date, read
+//     from `parsed.merchant_name`/`parsed.receipt_date` and read-only per
+//     D5/D6 (omitted entirely, not a placeholder, when either is null).
 //   - "Enter manually" recovery action (§5.1 point 7) is rendered but
 //     inert — item 16 (manual-entry fallback) is not built yet.
 //   - Row-level arithmetic validation (qty × unit_price vs line_total,
@@ -399,11 +400,15 @@ export default function ReviewScreen() {
 
   return (
     <section data-screen="review" className="app-screen py-8 space-y-4">
-      {/* §5.1 point 1 — pinned header. No merchant/date in the current data
-          model (see this file's header comment — that's Item 23's scope);
-          the trust copy and bill-level status fill that slot instead. */}
+      {/* §5.1 point 1 — pinned header. Item 23: merchant name/receipt date,
+          read-only (D5), each line simply absent when null (D6) — not a
+          placeholder. Rendered above the existing "Check the items" title,
+          which is downgraded to h3 so the merchant name (now the screen's
+          most prominent heading, per D-10) keeps a correct heading order. */}
       <div className="sticky top-0 z-10 bg-slate-50 pb-2 -mx-4 px-4 pt-2 space-y-2">
-        <h2 className="text-xl font-bold">Check the items</h2>
+        {parsed.merchant_name && <h2 className="text-2xl font-bold">{parsed.merchant_name}</h2>}
+        {parsed.receipt_date && <p className="text-xs text-slate-500">{parsed.receipt_date}</p>}
+        <h3 className="text-xl font-bold">Check the items</h3>
         <p className="text-slate-600 text-sm" data-testid="trust-copy">
           {TRUST_COPY}
         </p>

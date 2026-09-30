@@ -21,5 +21,12 @@ export function buildSplitPayload({ parsed, payers, assignments, ownerPaymentHan
       ),
     },
     ownerPaymentHandle,
+    // Item 23, D4: round-tripped exactly as api/parse.js returned them (via
+    // `parsed`, threaded through SET_PARSED with no reducer transformation —
+    // see ReviewScreen.jsx's header comment). undefined stays undefined (no
+    // opinion — a legacy/never-parsed bill), matching createSplit()'s own
+    // undefined-means-"omit the column" convention in api/_lib/supabase.js.
+    merchantName: parsed.merchant_name,
+    receiptDate: parsed.receipt_date,
   };
 }

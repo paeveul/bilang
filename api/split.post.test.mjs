@@ -164,6 +164,47 @@ test('GET returns payers and version; a row without them returns null and 0', as
   assert.equal(res.body.version, 0);
 });
 
+// --- Item 23: merchant_name / receipt_date ---
+
+test('POST passes merchantName/receiptDate through to storage as merchant_name/receipt_date', async () => {
+  const { res } = await post(postBody({ merchantName: 'Restoran Uncle', receiptDate: '2026-09-28' }));
+  assert.equal(res.statusCode, 201);
+  assert.equal(stored[0].merchantName, 'Restoran Uncle');
+  assert.equal(stored[0].receiptDate, '2026-09-28');
+});
+
+test('POST without merchantName/receiptDate: storage receives undefined for both (not the column at all)', async () => {
+  await post(postBody());
+  assert.equal(stored[0].merchantName, undefined);
+  assert.equal(stored[0].receiptDate, undefined);
+});
+
+test('POST rejects a non-string merchantName / a badly-formatted receiptDate with 400', async () => {
+  let res = (await post(postBody({ merchantName: 123 }))).res;
+  assert.equal(res.statusCode, 400);
+  res = (await post(postBody({ receiptDate: '28-09-2026' }))).res;
+  assert.equal(res.statusCode, 400);
+  assert.equal(stored.length, 0);
+});
+
+test('GET returns merchant_name and receipt_date; a row without them returns null for both', async () => {
+  const base = {
+    id: 'abc', items: [], assignments: {}, totals: {}, owner_payment_handle: 'h', created_at: 't',
+  };
+  splitRow = { ...base, merchant_name: 'Restoran Uncle', receipt_date: '2026-09-28' };
+  let res = fakeRes();
+  await handler({ method: 'GET', query: { id: 'abc' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.merchant_name, 'Restoran Uncle');
+  assert.equal(res.body.receipt_date, '2026-09-28');
+
+  splitRow = { ...base };
+  res = fakeRes();
+  await handler({ method: 'GET', query: { id: 'abc' } }, res);
+  assert.equal(res.body.merchant_name, null);
+  assert.equal(res.body.receipt_date, null);
+});
+
 test('claimed flags in creator-submitted assignments are stripped before storing; nothing else changes', async () => {
   const forged = {
     i1: { mode: 'equal', equal: ['Ali'], manual: { unit: 'RM', values: {} }, claimed: true },
