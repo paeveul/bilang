@@ -15,6 +15,8 @@ import {
   validateParsedReceipt,
   validateClaimRequest,
   resolveRosterName,
+  validateOtpRequest,
+  validateOtpVerify,
 } from './validate.js';
 
 function validSplitBody(overrides = {}) {
@@ -316,4 +318,67 @@ test('payers: names that collide with Object.prototype keys are rejected (case-i
   // Ordinary names that merely contain those words are fine.
   assert.equal(ok(['Constructor Cy', 'proto']), null);
   assert.equal(ok(['__proto__x']), null);
+});
+
+// ---- Item 10 Checkpoint 2, Step 7: validateOtpRequest / validateOtpVerify -
+
+test('validateOtpRequest: accepts a well-formed email', () => {
+  assert.equal(validateOtpRequest({ email: 'someone@example.com' }), null);
+});
+
+test('validateOtpRequest: rejects a missing or malformed email', () => {
+  assert.ok(validateOtpRequest({}));
+  assert.ok(validateOtpRequest({ email: 'not-an-email' }));
+  assert.ok(validateOtpRequest({ email: '' }));
+  assert.ok(validateOtpRequest({ email: 123 }));
+  assert.ok(validateOtpRequest(null));
+  assert.ok(validateOtpRequest([]));
+});
+
+test('validateOtpRequest: rejects an email over the 254-char cap', () => {
+  const longLocal = 'a'.repeat(250);
+  assert.ok(validateOtpRequest({ email: `${longLocal}@example.com` }));
+});
+
+test('validateOtpVerify: accepts a well-formed body with no terms fields', () => {
+  assert.equal(validateOtpVerify({ email: 'someone@example.com', code: '123456' }), null);
+});
+
+test('validateOtpVerify: accepts a well-formed body with valid terms fields', () => {
+  assert.equal(
+    validateOtpVerify({ email: 'someone@example.com', code: '123456', termsAccepted: true, termsVersion: '2026-09-23' }),
+    null
+  );
+});
+
+test('validateOtpVerify: rejects a code that is not exactly six digits', () => {
+  assert.ok(validateOtpVerify({ email: 'someone@example.com', code: '12345' }));
+  assert.ok(validateOtpVerify({ email: 'someone@example.com', code: '1234567' }));
+  assert.ok(validateOtpVerify({ email: 'someone@example.com', code: 'abcdef' }));
+  assert.ok(validateOtpVerify({ email: 'someone@example.com', code: 123456 }));
+  assert.ok(validateOtpVerify({ email: 'someone@example.com' }));
+});
+
+test('validateOtpVerify: a malformed email and a malformed code both return the identical fixed message', () => {
+  const badEmail = validateOtpVerify({ email: 'nope', code: '123456' });
+  const badCode = validateOtpVerify({ email: 'someone@example.com', code: 'xx' });
+  assert.equal(badEmail, 'Enter the 6-digit code from your email.');
+  assert.equal(badCode, 'Enter the 6-digit code from your email.');
+  assert.equal(badEmail, badCode);
+});
+
+test('validateOtpVerify: rejects a non-boolean termsAccepted', () => {
+  assert.ok(validateOtpVerify({ email: 'someone@example.com', code: '123456', termsAccepted: 'true' }));
+});
+
+test('validateOtpVerify: rejects an empty or non-string termsVersion', () => {
+  assert.ok(validateOtpVerify({ email: 'someone@example.com', code: '123456', termsVersion: '' }));
+  assert.ok(validateOtpVerify({ email: 'someone@example.com', code: '123456', termsVersion: 42 }));
+});
+
+test('validateOtpVerify: termsAccepted=false is a valid SHAPE (presence/requiredness is enforced downstream in the endpoint, not here)', () => {
+  assert.equal(
+    validateOtpVerify({ email: 'someone@example.com', code: '123456', termsAccepted: false, termsVersion: '2026-09-23' }),
+    null
+  );
 });

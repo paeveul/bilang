@@ -228,4 +228,99 @@ async function insertAnalyticsRows(rows) {
   }
 }
 
-module.exports = { createSplit, getSplit, claimSplitItem, insertAnalyticsRows };
+// ---- Item 10 Checkpoint 2, Step 7 --------------------------------------
+
+/**
+ * Insert-or-detect-existing for the `accounts` table, keyed by the Supabase
+ * auth user id (D11). Reports whether this call INSERTED a new row or
+ * matched an existing one — POST /api/auth/verify-code needs that
+ * distinction to decide whether the D15 terms-acceptance requirement
+ * applies (first-time sign-in only; a returning user is never re-asked).
+ *
+ * Implementation note on atomicity (read before changing this): plans
+ * §10.3 describes the accounts insert and the (first-time-only)
+ * terms_acceptances insert as happening "in the same transaction." A real
+ * Postgres transaction spanning two separate table writes would need a
+ * database function (an RPC) — that is a schema change, and Checkpoint 2's
+ * brief is explicit that no schema SQL is to be written or run beyond what
+ * was already needed. This function is deliberately just "insert, and
+ * report which case it was" — api/auth/verify-code.js achieves the same
+ * *observable* guarantee (no accounts row can be left behind with no
+ * matching terms_acceptances row) with an explicit compensating rollback
+ * (deleteOrphanedAccount, below) if the terms-acceptance insert fails.
+ * Flagged for Alex: if true DB-level atomicity via an RPC is wanted later,
+ * that is a schema addition and should be requested explicitly.
+ *
+ * @param {string} id - the Supabase auth user id (session.user.id)
+ * @returns {Promise<{account: {id: string, created_at: string}, inserted: boolean}>}
+ */
+async function upsertAccount(id) {
+  const supabase = getClient();
+  const { data, error } = await supabase.from('accounts').insert({ id }).select().single();
+  if (!error) {
+    return { account: data, inserted: true };
+  }
+  // 23505 = unique_violation (Postgres) — the row already exists, i.e. this
+  // is a returning user, not a failure.
+  if (error.code === '23505') {
+    const { data: existing, error: selectError } = await supabase
+      .from('accounts')
+      .select('id, created_at')
+      .eq('id', id)
+      .single();
+    if (selectError) throw selectError;
+    return { account: existing, inserted: false };
+  }
+  throw error;
+}
+
+/**
+ * D15: write the timestamped, versioned terms-acceptance record. Called
+ * ONLY when upsertAccount() reported `inserted: true` — a returning user is
+ * never asked to re-accept, and this function does not itself check that;
+ * the caller (api/auth/verify-code.js) enforces the "only on insert" rule.
+ *
+ * @param {string} accountId
+ * @param {string} termsVersion
+ */
+async function recordTermsAcceptance(accountId, termsVersion) {
+  const supabase = getClient();
+  const { error } = await supabase.from('terms_acceptances').insert({
+    account_id: accountId,
+    terms_kind: 'signup',
+    terms_version: termsVersion,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Compensating rollback for D15's "an account must never exist with no
+ * corresponding acceptance record" invariant — used only when
+ * upsertAccount() just inserted a brand-new row and either the caller
+ * declines/omits terms acceptance, or the subsequent recordTermsAcceptance
+ * insert itself fails. NOT a general-purpose account-deletion feature —
+ * Item 18 owns actual user-requested account deletion, separately and
+ * later. This exists solely to undo THIS function's own just-made insert,
+ * within the same request, before any cookie is ever set.
+ *
+ * Deliberately named distinctly from anything Item 18 will build, so a
+ * future reader searching for "account deletion" does not find this and
+ * mistake it for that feature.
+ *
+ * @param {string} id
+ */
+async function deleteOrphanedAccount(id) {
+  const supabase = getClient();
+  const { error } = await supabase.from('accounts').delete().eq('id', id);
+  if (error) throw error;
+}
+
+module.exports = {
+  createSplit,
+  getSplit,
+  claimSplitItem,
+  insertAnalyticsRows,
+  upsertAccount,
+  recordTermsAcceptance,
+  deleteOrphanedAccount,
+};

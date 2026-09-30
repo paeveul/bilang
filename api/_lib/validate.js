@@ -285,6 +285,68 @@ function validateParsedReceipt(parsed) {
   return null;
 }
 
+// ---- Item 10 Checkpoint 2, Step 7: OTP request/verify validators ----------
+
+const MAX_EMAIL_LEN = 254; // plans §10.3, D per checkpoint brief
+const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const OTP_CODE_RE = /^\d{6}$/;
+
+function validateEmailShape(email) {
+  if (typeof email !== 'string' || email.length === 0 || email.length > MAX_EMAIL_LEN) {
+    return 'Enter a valid email address.';
+  }
+  if (!EMAIL_SHAPE_RE.test(email.trim())) {
+    return 'Enter a valid email address.';
+  }
+  return null;
+}
+
+/**
+ * Validate a POST /api/auth/request-code body: `{ email }`. Matches the
+ * endpoint contract's "Malformed email" -> 400 case (plans §10.3).
+ *
+ * @param {*} body
+ * @returns {string|null}
+ */
+function validateOtpRequest(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return 'Enter a valid email address.';
+  }
+  return validateEmailShape(body.email);
+}
+
+/**
+ * Validate a POST /api/auth/verify-code body: `{ email, code, termsAccepted,
+ * termsVersion }`. Only shape is checked here — email format, code exactly
+ * six digits, and (when present) termsAccepted/termsVersion's basic types.
+ * Whether termsAccepted/termsVersion are REQUIRED depends on whether the
+ * account is being created for the first time, which is only known after
+ * the OTP has been verified and the accounts upsert has run (D15) — that
+ * enforcement lives in api/auth/verify-code.js, not here.
+ *
+ * @param {*} body
+ * @returns {string|null}
+ */
+function validateOtpVerify(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return 'Enter the 6-digit code from your email.';
+  }
+  const emailError = validateEmailShape(body.email);
+  if (emailError) return 'Enter the 6-digit code from your email.'; // fixed message per plans §10.3 — never distinguishes email vs code shape
+  if (typeof body.code !== 'string' || !OTP_CODE_RE.test(body.code)) {
+    return 'Enter the 6-digit code from your email.';
+  }
+  if (body.termsAccepted !== undefined && typeof body.termsAccepted !== 'boolean') {
+    return 'Invalid request.';
+  }
+  if (body.termsVersion !== undefined) {
+    if (typeof body.termsVersion !== 'string' || body.termsVersion.length === 0 || body.termsVersion.length > MAX_STRING_LEN) {
+      return 'Invalid request.';
+    }
+  }
+  return null;
+}
+
 module.exports = {
   generateSplitId,
   validateParseRequest,
@@ -294,6 +356,8 @@ module.exports = {
   validateClaimRequest,
   resolveRosterName,
   isReservedNameKey,
+  validateOtpRequest,
+  validateOtpVerify,
   MAX_PAYERS,
   MAX_PAYER_NAME_LEN,
 };
