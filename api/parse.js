@@ -35,7 +35,15 @@ module.exports = async function handler(req, res) {
     // should already be converted client-side, but fall back to jpeg's media
     // type rather than reject outright if one slips through.
     const effectiveMediaType = mimeType === 'image/heic' ? 'image/jpeg' : mimeType;
-    const parsed = await parseReceipt(image, effectiveMediaType);
+    // Item 17 (17.3): parseReceipt() now also returns `model`/`stopReason` for
+    // the harness and server log only — `.parsed` is exactly the object this
+    // handler validated and returned before this change. Item 17 Steps 4-5
+    // (routing an `unreadable`/degenerate parse to a distinct "unusable"
+    // response) are not built yet — wait on Item 13's classifier call site,
+    // per the plan's explicit sequencing. Until then this endpoint's
+    // behaviour for a bad read is unchanged: it falls through to the same
+    // shape-validation rejection below as it did before this change.
+    const { parsed } = await parseReceipt(image, effectiveMediaType);
 
     // Don't rely on Anthropic's `strict: true` as the only control — check
     // the shape ourselves before it leaves this server. See validate.js's

@@ -24,6 +24,12 @@ style.compiled.css
 # Vercel
 .vercel/
 
+# Item 17 Step 3 (bilang-mvp1-implementation-plans.md §17.6) — the receipt-
+# quality fixture harness's CSV output. Never committed: fixture photos
+# themselves already live outside the repo per Bilang's privacy posture (no
+# receipt images persisted, ever), and these CSVs are derived from them.
+scripts/harness-output/
+
 # OS/editor cruft
 .DS_Store
 Thumbs.db
