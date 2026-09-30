@@ -219,3 +219,108 @@ revoke all on bilang.bill_analytics_id_seq from anon, authenticated;
 --   alter table bilang.bill_analytics set schema public;
 --   revoke usage on schema bilang from service_role;
 --   drop schema if exists bilang;  -- only after both tables above are moved out
+
+-- =============================================================================
+-- Item 10 (account + email OTP sign-in), Checkpoint 1 Step 3.
+-- Source: bilang/technical/bilang-mvp1-implementation-plans.md §10.3, the
+-- "Database changes" block, plus D15 (terms_acceptances, added 2026-09-23).
+-- Same posture as every table above: dedicated `bilang` schema, RLS enabled
+-- with NO policies (deny-by-default; the service-role key inside
+-- api/_lib/auth.js and api/_lib/supabase.js is the only caller and bypasses
+-- RLS entirely), explicit grants scoped to exactly what this item's code
+-- path performs, explicit revokes from anon/authenticated as defence in
+-- depth. Manual application only — Alex runs this by hand in the Supabase
+-- SQL editor, same as every other block in this file. NOT run against any
+-- live database by Howard.
+-- =============================================================================
+
+-- `accounts` — D11: keyed by the Supabase auth user id (accounts.id), but
+-- deliberately NOT foreign-keyed to `auth.users`. Every Bilang table
+-- references `accounts`, never `auth.users`, so a future auth-provider
+-- change never has to touch application schema (§10.2, "Lock-in, assessed
+-- honestly"). No email or other PII column here — the verified email lives
+-- only in Supabase's own `auth.users` (§10.3 note, "No email address is
+-- stored in Bilang's own schema").
+create table if not exists bilang.accounts (
+  id          uuid primary key,
+  created_at  timestamptz not null default now()
+);
+
+-- `splits.account_id` — nullable at the database level because rows
+-- predating this column exist; required at the application layer instead
+-- (POST /api/split refuses without a session — that gate is Item 10 Step 8,
+-- not part of this checkpoint). Not a foreign key target for any SELECT the
+-- app performs today: the existing GET /api/split column list in
+-- api/_lib/supabase.js (SPLIT_COLUMNS) is untouched by this file and must
+-- stay untouched when Step 8 threads accountId through createSplit — adding
+-- account_id to that SELECT list would leak the creator's account id to the
+-- anonymous payer view (§10.3, "must never appear in the GET /api/split
+-- response").
+alter table bilang.splits add column if not exists account_id uuid references bilang.accounts (id);
+create index if not exists splits_account_id_idx on bilang.splits (account_id);
+
+alter table bilang.accounts enable row level security;
+
+-- `terms_acceptances` — D15, added 2026-09-23. The timestamped, versioned
+-- acceptance record Item 14 D8 requires and Item 14 §14.5 named as this
+-- item's own build requirement, not a follow-up. Append-only in practice
+-- (no UPDATE or DELETE anywhere in this item's build, same spirit as
+-- bilang.bill_analytics above) — a record that cannot be altered after the
+-- fact is the whole point: it is evidence for a dispute raised months
+-- later. `terms_kind` is constrained to 'signup' only in this item's build;
+-- item 11's checkout-step acceptance (the second D8 tick) will add its own
+-- value (e.g. 'credits_purchase') when that item builds it — this file does
+-- not pre-invent that value. `terms_version` is plain text, not a foreign
+-- key: Item 14 owns the actual version string and its versioning scheme;
+-- this table just records whichever string was current at the moment of
+-- acceptance.
+create table if not exists bilang.terms_acceptances (
+  id            bigserial primary key,
+  account_id    uuid not null references bilang.accounts (id),
+  terms_kind    text not null check (terms_kind in ('signup')),
+  terms_version text not null,
+  accepted_at   timestamptz not null default now()
+);
+
+create index if not exists terms_acceptances_account_id_idx
+  on bilang.terms_acceptances (account_id);
+
+alter table bilang.terms_acceptances enable row level security;
+
+-- Grants — same rationale as the splits/bill_analytics grants above: a
+-- custom schema gets no automatic grants, and Bilang's server (Item 10's
+-- api/_lib/auth.js and api/_lib/supabase.js) uses exclusively the
+-- service_role key. Scoped to exactly what this item's specified code path
+-- performs (§10.3 endpoint contracts):
+--   bilang.accounts           — upsert on successful OTP verification
+--                                (select, insert, update). No delete
+--                                anywhere in this item's build.
+--   bilang.terms_acceptances  — insert only, on first-time account creation
+--                                (§10.3's endpoint contract). No select,
+--                                update, or delete anywhere in this item's
+--                                build — this table IS append-only in
+--                                practice, same as bill_analytics.
+grant select, insert, update on bilang.accounts to service_role;
+grant insert on bilang.terms_acceptances to service_role;
+
+-- terms_acceptances.id is a bigserial, backed by an implicit sequence
+-- (bilang.terms_acceptances_id_seq). service_role needs USAGE (nextval on
+-- insert) and SELECT (some clients read back the generated id) on it, same
+-- pattern as bilang.bill_analytics_id_seq above. accounts.id is a plain
+-- `uuid primary key` supplied by the caller (the Supabase auth user id), not
+-- a sequence, so nothing is needed there.
+grant usage, select on bilang.terms_acceptances_id_seq to service_role;
+
+revoke all on bilang.accounts from anon, authenticated;
+revoke all on bilang.terms_acceptances from anon, authenticated;
+revoke all on bilang.terms_acceptances_id_seq from anon, authenticated;
+
+-- Rollback (manual — drops both new tables and the splits.account_id
+-- column; only before this item ships or if the data is disposable. Order
+-- matters: terms_acceptances and splits.account_id both reference accounts,
+-- so they must be dropped before accounts):
+--   drop index if exists bilang.terms_acceptances_account_id_idx;
+--   drop table if exists bilang.terms_acceptances;
+--   drop index if exists bilang.splits_account_id_idx;
+--   alter table bilang.splits drop column if exists account_id;
+--   drop table if exists bilang.accounts;
