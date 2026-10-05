@@ -38,7 +38,7 @@ test('page variant: email first, then the six-digit code step with a visible res
   assert.deepEqual(calls[0].body, { email: EMAIL });
   assert.equal(calls[0].options.credentials, 'same-origin');
 
-  const resend = screen.getByRole('button', { name: 'Resend code in 60s' });
+  const resend = screen.getByRole('button', { name: 'Resend in 60s' });
   assert.equal(resend.disabled, true, 'resend is locked during the cooldown');
 });
 
@@ -187,7 +187,7 @@ test('resend becomes available after the cooldown and sends a fresh code request
 
   await user.type(screen.getByLabelText('Email address'), EMAIL);
   await user.click(screen.getByRole('button', { name: 'Send me a code' }));
-  await screen.findByRole('button', { name: 'Resend code in 1s' });
+  await screen.findByRole('button', { name: 'Resend in 1s' });
 
   const resend = await screen.findByRole('button', { name: 'Resend code' }, { timeout: 3000 });
   await user.click(resend);

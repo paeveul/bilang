@@ -169,7 +169,7 @@ export default function AuthScreen({
         </form>
       ) : (
         <form onSubmit={handleCodeSubmit} className="space-y-4">
-          <p className="text-slate-600 text-base break-all">
+          <p className="text-slate-600 text-base break-words">
             We sent a six-digit code to <strong>{sentTo}</strong>. It expires in 10 minutes.
           </p>
 
@@ -194,14 +194,14 @@ export default function AuthScreen({
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
 
-          <div className="flex items-center justify-between gap-3 text-base">
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 text-base">
             <button
               type="button"
               disabled={busy || cooldownLeft > 0}
               onClick={() => sendCode(sentTo)}
-              className="min-h-[44px] px-1 text-amber-700 font-medium disabled:text-slate-400 disabled:cursor-not-allowed"
+              className="min-h-[44px] min-w-[10rem] px-1 text-left tabular-nums text-amber-700 font-medium disabled:text-slate-400 disabled:cursor-not-allowed"
             >
-              {cooldownLeft > 0 ? `Resend code in ${cooldownLeft}s` : 'Resend code'}
+              {cooldownLeft > 0 ? `Resend in ${cooldownLeft}s` : 'Resend code'}
             </button>
             <button
               type="button"

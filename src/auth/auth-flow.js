@@ -32,7 +32,7 @@ export function termsVersionFrom(env) {
 // Shown only when the request never reached the server (no status, no body),
 // so there is no server text to display. Everything else uses the server's own
 // `error` string.
-export const NETWORK_FALLBACK_MESSAGE = 'Could not reach Bilang. Check your connection and try again.';
+export const NETWORK_FALLBACK_MESSAGE = 'Could not reach Bilang. Check your internet and try again.';
 
 // The text a user sees for a failed auth call. Uses the server's own `error`
 // string verbatim (§10.3's error table). Falls back to the network message only
