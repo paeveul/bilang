@@ -252,6 +252,16 @@ async function sendOtp(email) {
 }
 
 /**
+ * Tag an upstream error with an `authKind` so the handler can choose the
+ * right user-facing response without inspecting Supabase's error shape.
+ */
+function tagAuthError(error, authKind) {
+  const tagged = error instanceof Error ? error : new Error(String(error && error.message ? error.message : error));
+  tagged.authKind = authKind;
+  return tagged;
+}
+
+/**
  * Verify a 6-digit code. Returns the Supabase session object on success
  * ({ access_token, refresh_token, user: { id, ... }, ... }), or null on an
  * invalid/expired code. Throws only on a transport-level failure (D per
@@ -264,12 +274,18 @@ async function verifyOtp(email, code) {
     // Supabase reports an invalid/expired OTP as an auth-level error with a
     // 4xx status, not a transport failure — treat that as "no session",
     // matching the export table's "null on invalid/expired code" contract.
-    // Anything else (network failure, 5xx) is re-thrown.
+    // Exception: 429 is Supabase's own rate limit, not a wrong code, so it is
+    // thrown tagged `authKind: 'rate_limited'` for the handler to map to 429.
+    // Everything else (network failure, 5xx, no status) is thrown tagged
+    // `authKind: 'unavailable'` — the handler must not show "invalid code".
     const status = error.status || (error.originalError && error.originalError.status);
+    if (status === 429) {
+      throw tagAuthError(error, 'rate_limited');
+    }
     if (typeof status === 'number' && status >= 400 && status < 500) {
       return null;
     }
-    throw error;
+    throw tagAuthError(error, 'unavailable');
   }
   if (!data || !data.session) return null;
   return data.session;

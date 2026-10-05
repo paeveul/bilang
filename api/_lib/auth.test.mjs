@@ -199,6 +199,64 @@ test('requireAccount: with no cookies at all and a refresh attempt that cannot p
   assert.deepEqual(jsonBody, { error: 'Please sign in to scan a receipt.', code: 'session_expired' });
 });
 
+// verifyOtp error classification. Supabase's /auth/v1/verify endpoint is
+// mocked at global.fetch — nothing reaches a real Supabase project or sends
+// any email.
+function mockVerifyResponse({ status, body }) {
+  global.fetch = async (url) => {
+    if (String(url).includes('/auth/v1/verify')) {
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (String(url).includes('/.well-known/jwks.json')) {
+      return new Response(JSON.stringify({ keys: [publicJwk] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected mock fetch: ${url}`);
+  };
+}
+
+test('verifyOtp: a Supabase 4xx wrong/expired code resolves null (unchanged 401 path in the handler)', async () => {
+  mockVerifyResponse({ status: 403, body: { code: 403, error_code: 'otp_expired', msg: 'Token has expired or is invalid' } });
+  const { verifyOtp } = freshModule();
+  const session = await verifyOtp('someone@example.com', '123456');
+  assert.equal(session, null);
+});
+
+test('verifyOtp: a Supabase 5xx is thrown tagged authKind "unavailable" (never resolves null)', async () => {
+  mockVerifyResponse({ status: 500, body: { code: 500, msg: 'Internal error' } });
+  const { verifyOtp } = freshModule();
+  await assert.rejects(verifyOtp('someone@example.com', '123456'), (err) => {
+    assert.equal(err.authKind, 'unavailable');
+    return true;
+  });
+});
+
+test('verifyOtp: a Supabase 429 is thrown tagged authKind "rate_limited" (not treated as a wrong code)', async () => {
+  mockVerifyResponse({ status: 429, body: { code: 429, msg: 'Too many requests' } });
+  const { verifyOtp } = freshModule();
+  await assert.rejects(verifyOtp('someone@example.com', '123456'), (err) => {
+    assert.equal(err.authKind, 'rate_limited');
+    return true;
+  });
+});
+
+test('verifyOtp: a network failure (fetch rejects) is thrown tagged authKind "unavailable"', async () => {
+  global.fetch = async (url) => {
+    if (String(url).includes('/auth/v1/verify')) throw new TypeError('fetch failed');
+    if (String(url).includes('/.well-known/jwks.json')) {
+      return new Response(JSON.stringify({ keys: [publicJwk] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected mock fetch: ${url}`);
+  };
+  const { verifyOtp } = freshModule();
+  await assert.rejects(verifyOtp('someone@example.com', '123456'), (err) => {
+    assert.equal(err.authKind, 'unavailable');
+    return true;
+  });
+});
+
 test('issueSessionCookies: writes three Set-Cookie headers with the correct names and Max-Age values', () => {
   const { issueSessionCookies } = freshModule();
   const headers = {};

@@ -23,6 +23,14 @@ const { checkVerifyCode } = require('../_lib/ratelimit-otp');
 const { upsertAccount, recordTermsAcceptance, deleteOrphanedAccount } = require('../_lib/supabase');
 
 const INVALID_CODE_RESPONSE = { error: 'That code is not valid or has expired. Request a new one.', code: 'invalid_code' };
+const AUTH_UNAVAILABLE_RESPONSE = {
+  error: 'Sign-in is temporarily unavailable. Please try again in a few minutes.',
+  code: 'auth_unavailable',
+};
+const SUPABASE_RATE_LIMITED_RESPONSE = {
+  error: 'Too many attempts. Please wait a few minutes and try again.',
+  code: 'rate_limited',
+};
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -68,8 +76,17 @@ module.exports = async function handler(req, res) {
   try {
     session = await verifyOtp(email, code);
   } catch (err) {
-    console.error('api/auth/verify-code.js — verifyOtp transport error:', err);
-    res.status(401).json(INVALID_CODE_RESPONSE);
+    // Supabase's own rate limit (429): tell the user to wait, not that the
+    // code is wrong. No Retry-After is sent — Supabase's window is not known
+    // here, so no number is invented.
+    if (err && err.authKind === 'rate_limited') {
+      console.error('api/auth/verify-code.js — verifyOtp rate limited by Supabase:', err);
+      res.status(429).json(SUPABASE_RATE_LIMITED_RESPONSE);
+      return;
+    }
+    // Outage, 5xx or network failure: never shown as a wrong code.
+    console.error('api/auth/verify-code.js — verifyOtp upstream failure:', err);
+    res.status(503).json(AUTH_UNAVAILABLE_RESPONSE);
     return;
   }
   // Wrong and expired codes both land here (verifyOtp returns null for

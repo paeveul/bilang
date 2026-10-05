@@ -162,12 +162,41 @@ test('a wrong/expired code (verifyOtp resolves null) returns 401 invalid_code', 
   assert.equal(issueSessionCookiesCalls.length, 0);
 });
 
-test('a verifyOtp transport failure also returns 401 invalid_code (not a 500)', async () => {
-  verifyOtpThrows = new Error('network blip');
+test('a verifyOtp network failure returns 503 auth_unavailable, never the invalid-code message', async () => {
+  verifyOtpThrows = new TypeError('fetch failed');
   const res = fakeRes();
   await handler(fakeReq(), res);
-  assert.equal(res.statusCode, 401);
-  assert.equal(res.body.code, 'invalid_code');
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.code, 'auth_unavailable');
+  assert.equal(res.body.error, 'Sign-in is temporarily unavailable. Please try again in a few minutes.');
+  assert.equal(issueSessionCookiesCalls.length, 0);
+});
+
+test('a Supabase 5xx (tagged unavailable by auth.js) returns 503 auth_unavailable, not 401', async () => {
+  const err = new Error('Internal server error');
+  err.status = 500;
+  err.authKind = 'unavailable';
+  verifyOtpThrows = err;
+  const res = fakeRes();
+  await handler(fakeReq(), res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.code, 'auth_unavailable');
+  assert.notEqual(res.body.code, 'invalid_code');
+  assert.equal(issueSessionCookiesCalls.length, 0);
+});
+
+test('a Supabase 429 (tagged rate_limited by auth.js) returns 429 rate_limited, not invalid_code', async () => {
+  const err = new Error('Too many requests');
+  err.status = 429;
+  err.authKind = 'rate_limited';
+  verifyOtpThrows = err;
+  const res = fakeRes();
+  await handler(fakeReq(), res);
+  assert.equal(res.statusCode, 429);
+  assert.equal(res.body.code, 'rate_limited');
+  assert.equal(res.body.error, 'Too many attempts. Please wait a few minutes and try again.');
+  assert.equal(res.headers['Retry-After'], undefined);
+  assert.equal(issueSessionCookiesCalls.length, 0);
 });
 
 test('returning user (inserted:false): terms fields are ignored entirely, no terms-acceptance write, session issued', async () => {
