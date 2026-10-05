@@ -20,6 +20,7 @@
 
 const { createSplit, getSplit, claimSplitItem, insertAnalyticsRows } = require('./_lib/supabase');
 const { requireAccount } = require('./_lib/auth');
+const { sendBadRequest, hasJsonContentType } = require('./_lib/bad-request');
 const {
   generateSplitId,
   validateSplitCreateRequest,
@@ -107,9 +108,19 @@ async function handlePost(req, res) {
   const accountId = await requireAccount(req, res);
   if (!accountId) return;
 
+  // Content-Type check, after the session check and before body validation.
+  // Refused with the generic 400 from api/_lib/bad-request.js. The reason is
+  // logged on the server only and is never sent to the client.
+  if (!hasJsonContentType(req)) {
+    console.warn('api/split.js POST refused: request is not application/json');
+    sendBadRequest(res);
+    return;
+  }
+
   const validationError = validateSplitCreateRequest(req.body);
   if (validationError) {
-    res.status(400).json({ error: validationError });
+    console.warn('api/split.js POST refused:', validationError);
+    sendBadRequest(res);
     return;
   }
 

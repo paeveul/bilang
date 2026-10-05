@@ -47,16 +47,21 @@ function fakeRes() {
   return {
     statusCode: null,
     body: null,
+    raw: null,
     status(code) {
       this.statusCode = code;
       return this;
     },
     json(payload) {
       this.body = payload;
+      this.raw = JSON.stringify(payload);
       return this;
     },
   };
 }
+
+const JSON_HEADERS = { 'content-type': 'application/json' };
+const GENERIC_400_RAW = '{"error":"Bad request.","code":"bad_request"}';
 
 function postBody(overrides = {}) {
   return {
@@ -78,13 +83,13 @@ function postBody(overrides = {}) {
   };
 }
 
-async function post(body) {
+async function post(body, headers = JSON_HEADERS) {
   const lines = { log: [], warn: [], error: [] };
   const orig = { log: console.log, warn: console.warn, error: console.error };
   for (const k of Object.keys(lines)) console[k] = (...a) => lines[k].push(a.join(' '));
   const res = fakeRes();
   try {
-    await handler({ method: 'POST', body }, res);
+    await handler({ method: 'POST', body, headers }, res);
   } finally {
     Object.assign(console, orig);
   }
@@ -274,4 +279,53 @@ test('claimed flags in creator-submitted assignments are stripped before storing
   assert.equal(forged.i1.claimed, true);
   await post(postBody());
   assert.deepEqual(stored[1].assignments, { i1: ['Ali', 'Bea'], i2: ['Bea'] });
+});
+
+// --- Content-Type check (generic 400, after the session gate) ---
+
+test('split POST: wrong Content-Type (text/plain): generic 400, nothing stored', async () => {
+  const { res } = await post(postBody(), { 'content-type': 'text/plain' });
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Bad request.', code: 'bad_request' });
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: application/json with charset is accepted', async () => {
+  const { res } = await post(postBody(), { 'content-type': 'application/json; charset=utf-8' });
+  assert.equal(res.statusCode, 201);
+  assert.equal(stored.length, 1);
+});
+
+test('split POST: missing Content-Type: generic 400, nothing stored', async () => {
+  const { res } = await post(postBody(), {});
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.raw, GENERIC_400_RAW);
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: unsigned with a wrong Content-Type: still 401 session_expired (gate runs first)', async () => {
+  authAccountId = null;
+  const { res } = await post(postBody(), { 'content-type': 'text/plain' });
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.code, 'session_expired');
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: unsigned with the right Content-Type: still 401 session_expired', async () => {
+  authAccountId = null;
+  const { res } = await post(postBody(), JSON_HEADERS);
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.code, 'session_expired');
+  assert.equal(res.body.error, 'Please sign in to scan a receipt.');
+});
+
+test('split POST: wrong Content-Type 400 is byte-identical to the malformed-body 400', async () => {
+  const wrongType = (await post(postBody(), { 'content-type': 'text/plain' })).res;
+  const missingType = (await post(postBody(), {})).res;
+  const malformed = (await post({ nonsense: true }, JSON_HEADERS)).res;
+  assert.equal(wrongType.statusCode, 400);
+  assert.equal(malformed.statusCode, 400);
+  assert.equal(wrongType.raw, malformed.raw);
+  assert.equal(missingType.raw, malformed.raw);
+  assert.equal(malformed.raw, GENERIC_400_RAW);
 });

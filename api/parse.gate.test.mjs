@@ -55,27 +55,34 @@ function fakeRes() {
   return {
     statusCode: null,
     body: null,
+    raw: null,
     status(code) {
       this.statusCode = code;
       return this;
     },
     json(payload) {
       this.body = payload;
+      this.raw = JSON.stringify(payload);
       return this;
     },
   };
 }
 
 const validBody = () => ({ image: 'aGVsbG8=', mimeType: 'image/jpeg' });
+const JSON_HEADERS = { 'content-type': 'application/json' };
+const GENERIC_400_RAW = '{"error":"Bad request.","code":"bad_request"}';
 
-async function run(method, body) {
+async function run(method, body, headers = JSON_HEADERS) {
   const origError = console.error;
+  const origWarn = console.warn;
   console.error = () => {};
+  console.warn = () => {};
   const res = fakeRes();
   try {
-    await handler({ method, body }, res);
+    await handler({ method, body, headers }, res);
   } finally {
     console.error = origError;
+    console.warn = origWarn;
   }
   return res;
 }
@@ -121,4 +128,53 @@ test('non-POST: 405 as before, and no session check is made', async () => {
   const res = await run('GET', undefined);
   assert.equal(res.statusCode, 405);
   assert.equal(authCalls, 0);
+});
+
+// --- Content-Type check (generic 400, after the session gate) ---
+
+test('wrong Content-Type (text/plain): generic 400, Claude not called', async () => {
+  const res = await run('POST', validBody(), { 'content-type': 'text/plain' });
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Bad request.', code: 'bad_request' });
+  assert.equal(parseCalls.length, 0);
+});
+
+test('application/json with charset is accepted', async () => {
+  const res = await run('POST', validBody(), { 'content-type': 'application/json; charset=utf-8' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(parseCalls.length, 1);
+});
+
+test('missing Content-Type: generic 400, Claude not called', async () => {
+  const res = await run('POST', validBody(), {});
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.raw, GENERIC_400_RAW);
+  assert.equal(parseCalls.length, 0);
+});
+
+test('unsigned POST with a wrong Content-Type: still 401 session_expired (gate runs first)', async () => {
+  authAccountId = null;
+  const res = await run('POST', validBody(), { 'content-type': 'text/plain' });
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.code, 'session_expired');
+  assert.equal(parseCalls.length, 0);
+});
+
+test('unsigned POST with the right Content-Type: still 401 session_expired', async () => {
+  authAccountId = null;
+  const res = await run('POST', validBody(), JSON_HEADERS);
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.code, 'session_expired');
+  assert.equal(res.body.error, 'Please sign in to scan a receipt.');
+});
+
+test('wrong Content-Type 400 is byte-identical to the malformed-body 400', async () => {
+  const wrongType = await run('POST', validBody(), { 'content-type': 'text/plain' });
+  const missingType = await run('POST', validBody(), {});
+  const malformed = await run('POST', { image: 'aGVsbG8=', mimeType: 'image/gif' }, JSON_HEADERS);
+  assert.equal(wrongType.statusCode, 400);
+  assert.equal(malformed.statusCode, 400);
+  assert.equal(wrongType.raw, malformed.raw);
+  assert.equal(missingType.raw, malformed.raw);
+  assert.equal(malformed.raw, GENERIC_400_RAW);
 });
