@@ -120,7 +120,7 @@ async function handlePost(req, res) {
   const validationError = validateSplitCreateRequest(req.body);
   if (validationError) {
     console.warn('api/split.js POST refused:', validationError);
-    sendBadRequest(res);
+    res.status(400).json({ error: validationError });
     return;
   }
 

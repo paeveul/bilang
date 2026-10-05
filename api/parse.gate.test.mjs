@@ -70,7 +70,7 @@ function fakeRes() {
 
 const validBody = () => ({ image: 'aGVsbG8=', mimeType: 'image/jpeg' });
 const JSON_HEADERS = { 'content-type': 'application/json' };
-const GENERIC_400_RAW = '{"error":"Bad request.","code":"bad_request"}';
+const GENERIC_400_RAW = '{"error":"Bad Request"}';
 
 async function run(method, body, headers = JSON_HEADERS) {
   const origError = console.error;
@@ -118,9 +118,20 @@ test('signed-in POST: behaves as before, 200 with the parsed receipt', async () 
   assert.equal(parseCalls[0].mediaType, 'image/jpeg');
 });
 
-test('signed-in POST with an invalid body: 400 as before, Claude not called', async () => {
+test('signed-in POST with an unsupported image type: 400 with the original specific message, Claude not called', async () => {
   const res = await run('POST', { image: 'aGVsbG8=', mimeType: 'image/gif' });
   assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Unsupported or missing image type' });
+  assert.equal(parseCalls.length, 0);
+});
+
+test('signed-in POST with an image too large: 400 with the original specific message, Claude not called', async () => {
+  const huge = 'A'.repeat(8_000_001); // one character over MAX_IMAGE_BASE64_CHARS
+  const res = await run('POST', { image: huge, mimeType: 'image/jpeg' });
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, {
+    error: 'Image too large — please retake the photo at a lower resolution',
+  });
   assert.equal(parseCalls.length, 0);
 });
 
@@ -135,7 +146,7 @@ test('non-POST: 405 as before, and no session check is made', async () => {
 test('wrong Content-Type (text/plain): generic 400, Claude not called', async () => {
   const res = await run('POST', validBody(), { 'content-type': 'text/plain' });
   assert.equal(res.statusCode, 400);
-  assert.deepEqual(res.body, { error: 'Bad request.', code: 'bad_request' });
+  assert.deepEqual(res.body, { error: 'Bad Request' });
   assert.equal(parseCalls.length, 0);
 });
 
@@ -168,13 +179,21 @@ test('unsigned POST with the right Content-Type: still 401 session_expired', asy
   assert.equal(res.body.error, 'Please sign in to scan a receipt.');
 });
 
-test('wrong Content-Type 400 is byte-identical to the malformed-body 400', async () => {
+test('format refusals (wrong and missing Content-Type) return byte-identical 400 bodies', async () => {
   const wrongType = await run('POST', validBody(), { 'content-type': 'text/plain' });
+  const formUrlEncoded = await run('POST', validBody(), { 'content-type': 'application/x-www-form-urlencoded' });
   const missingType = await run('POST', validBody(), {});
-  const malformed = await run('POST', { image: 'aGVsbG8=', mimeType: 'image/gif' }, JSON_HEADERS);
   assert.equal(wrongType.statusCode, 400);
-  assert.equal(malformed.statusCode, 400);
-  assert.equal(wrongType.raw, malformed.raw);
-  assert.equal(missingType.raw, malformed.raw);
-  assert.equal(malformed.raw, GENERIC_400_RAW);
+  assert.equal(formUrlEncoded.statusCode, 400);
+  assert.equal(missingType.statusCode, 400);
+  assert.equal(wrongType.raw, GENERIC_400_RAW);
+  assert.equal(formUrlEncoded.raw, GENERIC_400_RAW);
+  assert.equal(missingType.raw, GENERIC_400_RAW);
+});
+
+test('malformed body with the right Content-Type keeps its specific 400 message, not the generic body', async () => {
+  const res = await run('POST', { image: 'aGVsbG8=', mimeType: 'image/gif' }, JSON_HEADERS);
+  assert.equal(res.statusCode, 400);
+  assert.notEqual(res.raw, GENERIC_400_RAW);
+  assert.equal(res.body.error, 'Unsupported or missing image type');
 });

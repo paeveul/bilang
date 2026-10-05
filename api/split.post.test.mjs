@@ -61,7 +61,7 @@ function fakeRes() {
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json' };
-const GENERIC_400_RAW = '{"error":"Bad request.","code":"bad_request"}';
+const GENERIC_400_RAW = '{"error":"Bad Request"}';
 
 function postBody(overrides = {}) {
   return {
@@ -286,7 +286,25 @@ test('claimed flags in creator-submitted assignments are stripped before storing
 test('split POST: wrong Content-Type (text/plain): generic 400, nothing stored', async () => {
   const { res } = await post(postBody(), { 'content-type': 'text/plain' });
   assert.equal(res.statusCode, 400);
-  assert.deepEqual(res.body, { error: 'Bad request.', code: 'bad_request' });
+  assert.deepEqual(res.body, { error: 'Bad Request' });
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: split validation 400 keeps its original specific message, nothing stored', async () => {
+  const bad = postBody();
+  bad.items[0].qty = 0;
+  const { res } = await post(bad);
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Invalid item quantity' });
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: invalid item category keeps its original specific message', async () => {
+  const bad = postBody();
+  bad.items[1].category = 'not-a-category';
+  const { res } = await post(bad);
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Invalid item category' });
   assert.equal(stored.length, 0);
 });
 
@@ -319,13 +337,14 @@ test('split POST: unsigned with the right Content-Type: still 401 session_expire
   assert.equal(res.body.error, 'Please sign in to scan a receipt.');
 });
 
-test('split POST: wrong Content-Type 400 is byte-identical to the malformed-body 400', async () => {
+test('split POST: format refusals (wrong and missing Content-Type) return byte-identical 400 bodies', async () => {
   const wrongType = (await post(postBody(), { 'content-type': 'text/plain' })).res;
+  const formUrlEncoded = (await post(postBody(), { 'content-type': 'application/x-www-form-urlencoded' })).res;
   const missingType = (await post(postBody(), {})).res;
-  const malformed = (await post({ nonsense: true }, JSON_HEADERS)).res;
   assert.equal(wrongType.statusCode, 400);
-  assert.equal(malformed.statusCode, 400);
-  assert.equal(wrongType.raw, malformed.raw);
-  assert.equal(missingType.raw, malformed.raw);
-  assert.equal(malformed.raw, GENERIC_400_RAW);
+  assert.equal(formUrlEncoded.statusCode, 400);
+  assert.equal(missingType.statusCode, 400);
+  assert.equal(wrongType.raw, GENERIC_400_RAW);
+  assert.equal(formUrlEncoded.raw, GENERIC_400_RAW);
+  assert.equal(missingType.raw, GENERIC_400_RAW);
 });

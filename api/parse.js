@@ -42,7 +42,7 @@ module.exports = async function handler(req, res) {
   const validationError = validateParseRequest(req.body);
   if (validationError) {
     console.warn('api/parse.js refused:', validationError);
-    sendBadRequest(res);
+    res.status(400).json({ error: validationError });
     return;
   }
 
