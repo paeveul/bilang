@@ -19,6 +19,7 @@
 // the stored roster and nothing more is checked.
 
 const { createSplit, getSplit, claimSplitItem, insertAnalyticsRows } = require('./_lib/supabase');
+const { requireAccount } = require('./_lib/auth');
 const {
   generateSplitId,
   validateSplitCreateRequest,
@@ -101,6 +102,11 @@ function stripClaimedFlags(assignments) {
 }
 
 async function handlePost(req, res) {
+  // Item 10 Step 8 (plans §10.3): session check first, before body validation.
+  // The accountId is persisted to splits.account_id; it is never returned by GET.
+  const accountId = await requireAccount(req, res);
+  if (!accountId) return;
+
   const validationError = validateSplitCreateRequest(req.body);
   if (validationError) {
     res.status(400).json({ error: validationError });
@@ -131,7 +137,7 @@ async function handlePost(req, res) {
   const expiresAt = new Date(Date.now() + RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   try {
-    await createSplit({ id, items, assignments, totals, payers, ownerPaymentHandle, expiresAt, merchantName, receiptDate });
+    await createSplit({ id, items, assignments, totals, payers, ownerPaymentHandle, expiresAt, merchantName, receiptDate, accountId });
 
     // Roadmap F7(a) — anonymised analytics capture, MVP-1 scope. Fire-and-
     // forget, alongside (not instead of) the operational persist above. No

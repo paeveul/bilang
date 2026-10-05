@@ -22,6 +22,25 @@ require.cache[supabasePath] = {
     insertAnalyticsRows: async () => {},
   },
 };
+// Item 10 Step 8: the auth layer is stubbed. requireAccount mirrors its
+// contract (accountId on success; 401 session_expired and null otherwise) so
+// these tests prove the handler's wiring, not Supabase. The real requireAccount
+// is covered by api/_lib/auth.test.mjs.
+const authPath = require.resolve('./_lib/auth.js');
+let authAccountId = 'acct-1';
+require.cache[authPath] = {
+  id: authPath,
+  filename: authPath,
+  loaded: true,
+  exports: {
+    requireAccount: async (req, res) => {
+      if (authAccountId) return authAccountId;
+      res.status(401).json({ error: 'Please sign in to scan a receipt.', code: 'session_expired' });
+      return null;
+    },
+  },
+};
+
 const handler = require('./split.js');
 
 function fakeRes() {
@@ -75,6 +94,40 @@ async function post(body) {
 beforeEach(() => {
   stored.length = 0;
   splitRow = null;
+  authAccountId = 'acct-1';
+});
+
+// --- Item 10 Step 8: session gate ---
+
+test('unsigned POST: 401 session_expired, nothing stored, and validation is never reached', async () => {
+  authAccountId = null;
+  // A body that would fail validation with a 400 if the gate were not first.
+  const { res } = await post({ nonsense: true });
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.code, 'session_expired');
+  assert.equal(res.body.error, 'Please sign in to scan a receipt.');
+  assert.equal(stored.length, 0);
+});
+
+test('signed-in POST: the accountId is threaded into storage as accountId', async () => {
+  authAccountId = 'acct-42';
+  const { res } = await post(postBody());
+  assert.equal(res.statusCode, 201);
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].accountId, 'acct-42');
+});
+
+test('GET stays anonymous: no session needed, and the response never carries an account id', async () => {
+  authAccountId = null;
+  const base = {
+    id: 'abc', items: [], assignments: {}, totals: {}, owner_payment_handle: 'h', created_at: 't',
+  };
+  splitRow = { ...base, account_id: 'acct-42', payers: ['Ali'], version: 1 };
+  const res = fakeRes();
+  await handler({ method: 'GET', query: { id: 'abc' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal('account_id' in res.body, false);
+  assert.equal('accountId' in res.body, false);
 });
 
 test('honest request: stored, 201, no mismatch line', async () => {

@@ -72,6 +72,9 @@ function warnOnce(key, message) {
  * @param {string} [params.merchantName] - Item 23, D4. Omit (undefined) to
  *   skip the column entirely; pass null explicitly for "read but illegible".
  * @param {string} [params.receiptDate] - Item 23, D4. Same undefined/null rule.
+ * @param {string} [params.accountId] - Item 10 Step 8. The signed-in creator's
+ *   account id (from requireAccount), persisted to splits.account_id. Omit
+ *   (undefined) to leave the column unset; never returned by GET /api/split.
  * @returns {Promise<object>} the inserted row
  */
 async function createSplit({
@@ -84,6 +87,7 @@ async function createSplit({
   expiresAt,
   merchantName,
   receiptDate,
+  accountId,
 }) {
   const supabase = getClient();
   const row = {
@@ -93,6 +97,7 @@ async function createSplit({
     totals,
     owner_payment_handle: ownerPaymentHandle,
     expires_at: expiresAt,
+    ...(accountId === undefined ? {} : { account_id: accountId }),
   };
   const insert = (r) => supabase.from('splits').insert(r).select().single();
 

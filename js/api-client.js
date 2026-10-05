@@ -8,6 +8,25 @@
 // files under api/ are not renamed, only reached via a different path).
 // V1: every endpoint is versioned, including endpoints not built yet.
 
+// Item 10 Step 9 (plans §10.3, "js/api-client.js — modified"): a response
+// carrying code "session_expired" is thrown as a SessionExpiredError, so
+// callers can branch on it (the in-place re-auth of Step 11) without matching
+// message text. The message is still the server's own error string.
+export class SessionExpiredError extends Error {
+  constructor(message, body) {
+    super(message);
+    this.name = 'SessionExpiredError';
+    this.code = 'session_expired';
+    this.body = body;
+  }
+}
+
+function failureFor(data, fallbackMessage) {
+  const message = data.error || fallbackMessage;
+  if (data.code === 'session_expired') return new SessionExpiredError(message, data);
+  return new Error(message);
+}
+
 /**
  * @param {string} base64Image - raw base64 image data (no data: URI prefix)
  * @param {string} mimeType
@@ -16,12 +35,13 @@
 export async function parseReceipt(base64Image, mimeType) {
   const res = await fetch('/api/v1/parse', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image: base64Image, mimeType }),
   });
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to parse receipt');
+    throw failureFor(data, 'Failed to parse receipt');
   }
   return data;
 }
@@ -33,12 +53,13 @@ export async function parseReceipt(base64Image, mimeType) {
 export async function createSplit(payload) {
   const res = await fetch('/api/v1/split', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to create split');
+    throw failureFor(data, 'Failed to create split');
   }
   return data;
 }
@@ -48,7 +69,7 @@ export async function createSplit(payload) {
  * @returns {Promise<object>} the split's public fields
  */
 export async function getSplit(id) {
-  const res = await fetch(`/api/v1/split?id=${encodeURIComponent(id)}`);
+  const res = await fetch(`/api/v1/split?id=${encodeURIComponent(id)}`, { credentials: 'same-origin' });
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data.error || 'Split not found');
@@ -82,6 +103,7 @@ export class PatchSplitError extends Error {
 export async function patchSplit(id, body) {
   const res = await fetch(`/api/v1/split?id=${encodeURIComponent(id)}`, {
     method: 'PATCH',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });

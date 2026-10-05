@@ -50,6 +50,20 @@ require.cache[supabasePath] = {
     },
   },
 };
+// Item 10 Step 8: split.js now gates POST behind requireAccount. This file's
+// PATCH tests are anonymous and never touch the gate, so the auth layer is
+// stubbed as signed-in to keep the POST-validation assertion below meaningful.
+// The gate itself is covered by api/split.post.test.mjs.
+const authPath = require.resolve('./_lib/auth.js');
+require.cache[authPath] = {
+  id: authPath,
+  filename: authPath,
+  loaded: true,
+  exports: {
+    requireAccount: async () => 'acct-test',
+  },
+};
+
 const handler = require('./split.js');
 
 function fakeRes() {

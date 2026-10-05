@@ -15,12 +15,19 @@
 
 const { parseReceipt } = require('./_lib/anthropic');
 const { validateParseRequest, validateParsedReceipt } = require('./_lib/validate');
+const { requireAccount } = require('./_lib/auth');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
+
+  // Item 10 Step 8 (plans §10.3, "Gated endpoints"): the session check runs
+  // first after the method check, before body validation, so an unsigned
+  // caller learns nothing about request shape and never reaches Claude.
+  const accountId = await requireAccount(req, res);
+  if (!accountId) return;
 
   const validationError = validateParseRequest(req.body);
   if (validationError) {
