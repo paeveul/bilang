@@ -17,6 +17,7 @@
 import { useRef, useState } from 'react';
 import { parseReceipt } from '../../js/api-client.js';
 import { useBillActions } from '../state/BillContext.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -29,6 +30,7 @@ function readFileAsDataUrl(file) {
 
 export default function CaptureScreen() {
   const { goToScreen, setReceipt, clearReceiptImage, setParsed, setError } = useBillActions();
+  const { runWithSession } = useAuth();
   const [previewSrc, setPreviewSrc] = useState(null);
   const inputRef = useRef(null);
 
@@ -46,7 +48,10 @@ export default function CaptureScreen() {
 
     goToScreen('parsing');
     try {
-      const parsed = await parseReceipt(base64, mimeType);
+      // Item 10 Step 11: a session_expired reply opens the sign-in overlay and
+      // this same parse is retried after sign-in. The receipt image is only
+      // cleared in the finally below, after that retry has finished.
+      const parsed = await runWithSession(() => parseReceipt(base64, mimeType));
       setParsed(parsed);
     } catch (err) {
       setError(err.message || 'Could not read this receipt.');

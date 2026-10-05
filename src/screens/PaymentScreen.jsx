@@ -11,10 +11,12 @@ import { useState } from 'react';
 import { createSplit } from '../../js/api-client.js';
 import { buildSplitPayload } from './split-payload.js';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 export default function PaymentScreen() {
   const { parsed, payers, assignments } = useBillState();
   const { goToScreen, setPaymentHandle, setShareUrl, setError } = useBillActions();
+  const { runWithSession } = useAuth();
   const [handle, setHandle] = useState('');
   const [validationError, setValidationError] = useState('');
 
@@ -30,9 +32,10 @@ export default function PaymentScreen() {
     goToScreen('creating');
 
     try {
-      const { url } = await createSplit(
-        buildSplitPayload({ parsed, payers, assignments, ownerPaymentHandle: trimmed })
-      );
+      // Item 10 Step 11: the payload is built once, so a retry after sign-in
+      // submits exactly the corrected bill the user saw, not a rebuilt one.
+      const payload = buildSplitPayload({ parsed, payers, assignments, ownerPaymentHandle: trimmed });
+      const { url } = await runWithSession(() => createSplit(payload));
       setShareUrl(`${window.location.origin}${url}`);
       goToScreen('share');
     } catch (err) {

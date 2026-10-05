@@ -36,6 +36,8 @@ import PaymentScreen from './screens/PaymentScreen.jsx';
 import CreatingScreen from './screens/CreatingScreen.jsx';
 import ShareScreen from './screens/ShareScreen.jsx';
 import ErrorScreen from './screens/ErrorScreen.jsx';
+import AuthScreen from './screens/AuthScreen.jsx';
+import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 
 // Order matches index.html's existing data-screen sections, in document
 // order. 'assign' is kept here as a historical marker only (Step 7 built
@@ -77,6 +79,39 @@ function AppShell() {
   }
 }
 
+// Item 10 Checkpoint 4 — the creator path's sign-in gate. Only mounted on the
+// creator route, so /s/<id> never reaches it (§10.3: the payer path gains no
+// auth check).
+//   - checking   -> a plain wait line while getSession() runs.
+//   - signed-out -> the full sign-in screen, showing the server's message if
+//                   the session check itself failed (an outage blocks everyone).
+//   - signed-in  -> the creator flow. If a request later reports
+//                   session_expired, the same sign-in form opens as an overlay
+//                   above the screen underneath, which stays mounted, so no
+//                   state is lost (Step 11).
+function CreatorGate() {
+  const { phase, startupError, overlayOpen, markSignedIn } = useAuth();
+
+  if (phase === 'checking') {
+    return <p className="py-16 text-center text-slate-600">Checking your sign-in…</p>;
+  }
+  if (phase === 'signed-out') {
+    return <AuthScreen variant="page" startupError={startupError} onSignedIn={markSignedIn} />;
+  }
+  return (
+    <>
+      <AppShell />
+      {overlayOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
+            <AuthScreen variant="overlay" onSignedIn={markSignedIn} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Routes() {
   const { route, params } = useRouter();
   if (route === 'payer') {
@@ -87,11 +122,13 @@ function Routes() {
     );
   }
   return (
-    <BillProvider>
-      <div className="mx-auto max-w-lg px-4 pb-16">
-        <AppShell />
-      </div>
-    </BillProvider>
+    <AuthProvider>
+      <BillProvider>
+        <div className="mx-auto max-w-lg px-4 pb-16">
+          <CreatorGate />
+        </div>
+      </BillProvider>
+    </AuthProvider>
   );
 }
 

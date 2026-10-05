@@ -86,6 +86,11 @@ function mockFetch() {
   const calls = [];
   globalThis.fetch = async (url, options) => {
     calls.push({ url: String(url), options });
+    // Item 10 Step 10: the creator path checks the session on load. This
+    // smoke test is the signed-in path, so the session answer is signed-in.
+    if (String(url) === '/api/v1/auth/session') {
+      return { ok: true, status: 200, json: async () => ({ signedIn: true, accountId: 'acct-smoke' }) };
+    }
     if (String(url).includes('/api/v1/parse')) {
       return { ok: true, json: async () => PARSED_RECEIPT };
     }
@@ -125,7 +130,7 @@ test('full creator path: landing -> capture -> parse -> review -> payment -> cre
   render(<App />);
 
   // --- Landing: consent gate ---
-  const consentCheckbox = screen.getByRole('checkbox');
+  const consentCheckbox = await screen.findByRole('checkbox');
   await user.click(consentCheckbox);
   await user.click(screen.getByRole('button', { name: 'Start a new split' }));
 
