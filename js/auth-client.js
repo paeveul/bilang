@@ -63,16 +63,24 @@ async function call(path, init) {
 /**
  * Ask the server to email a six-digit code. Resolves on the server's 204,
  * which is identical for known, unknown and rate-limited-but-valid addresses
- * (D12). Throws AuthError on 400, 429, 502 and 503.
+ * (D12). Throws AuthError on 400, 429, 502 and 503 — including 400
+ * terms_not_accepted (Alex, 2026-10-10): the tick now gates the SEND itself,
+ * not just verification, so the server refuses before dispatch when the tick
+ * fields are missing or false.
  *
  * @param {string} email
+ * @param {{termsAccepted?: boolean, termsVersion?: string}} [terms]
  * @returns {Promise<void>}
  */
-export async function requestCode(email) {
+export async function requestCode(email, terms = {}) {
   await call('/request-code', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({
+      email,
+      ...(terms.termsAccepted === undefined ? {} : { termsAccepted: terms.termsAccepted }),
+      ...(terms.termsVersion === undefined ? {} : { termsVersion: terms.termsVersion }),
+    }),
   });
 }
 

@@ -320,6 +320,37 @@ async function deleteOrphanedAccount(id) {
   if (error) throw error;
 }
 
+/**
+ * Tony's approved MVP1 "cheap half" (2026-10-10, relayed via coordinator,
+ * bilang-pm-tracker.md v2.80 change-log): read back just the one column
+ * GET /api/auth/session needs to decide whether a silent sync is due. No
+ * banner, no email, no copy — the visible notification stays on backlog.
+ *
+ * @param {string} id
+ * @returns {Promise<string|null>}
+ */
+async function getTermsVersionSeen(id) {
+  const supabase = getClient();
+  const { data, error } = await supabase.from('accounts').select('terms_version_seen').eq('id', id).single();
+  if (error) throw error;
+  return data.terms_version_seen;
+}
+
+/**
+ * Silently records that this account has now seen `version`. Called only
+ * when GET /api/auth/session has already determined the stored value
+ * differs from the currently published version — this function itself does
+ * not compare, it just writes.
+ *
+ * @param {string} id
+ * @param {string} version
+ */
+async function updateTermsVersionSeen(id, version) {
+  const supabase = getClient();
+  const { error } = await supabase.from('accounts').update({ terms_version_seen: version }).eq('id', id);
+  if (error) throw error;
+}
+
 module.exports = {
   createSplit,
   getSplit,
@@ -328,4 +359,6 @@ module.exports = {
   upsertAccount,
   recordTermsAcceptance,
   deleteOrphanedAccount,
+  getTermsVersionSeen,
+  updateTermsVersionSeen,
 };

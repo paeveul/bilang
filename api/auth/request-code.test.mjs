@@ -15,6 +15,7 @@ const limiterPath = require.resolve('../_lib/ratelimit-otp.js');
 let sendOtpCalls;
 let sendOtpBehavior; // () => void | throws
 let limiterResult;
+let limiterCalls;
 
 require.cache[authPath] = {
   id: authPath,
@@ -33,7 +34,10 @@ require.cache[limiterPath] = {
   filename: limiterPath,
   loaded: true,
   exports: {
-    checkRequestCode: async () => limiterResult,
+    checkRequestCode: async (req, email) => {
+      limiterCalls.push(email);
+      return limiterResult;
+    },
   },
 };
 
@@ -70,7 +74,7 @@ function fakeReq(overrides = {}) {
   return {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: { email: 'someone@example.com' },
+    body: { email: 'someone@example.com', termsAccepted: true, termsVersion: 'draft-0.1' },
     ...overrides,
   };
 }
@@ -79,6 +83,7 @@ beforeEach(() => {
   sendOtpCalls = [];
   sendOtpBehavior = null;
   limiterResult = { outcome: 'ok' };
+  limiterCalls = [];
 });
 
 test('non-POST is rejected with 405', async () => {
@@ -95,9 +100,45 @@ test('a non-JSON content-type is rejected with 400 (CSRF second layer)', async (
 
 test('a malformed email is rejected with 400 before the limiter or sendOtp run', async () => {
   const res = fakeRes();
-  await handler(fakeReq({ body: { email: 'not-an-email' } }), res);
+  await handler(fakeReq({ body: { email: 'not-an-email', termsAccepted: true, termsVersion: 'draft-0.1' } }), res);
   assert.equal(res.statusCode, 400);
   assert.equal(sendOtpCalls.length, 0);
+});
+
+test('D15 (moved here 2026-10-10): termsAccepted omitted is rejected 400 terms_not_accepted, before the limiter or sendOtp run', async () => {
+  const res = fakeRes();
+  await handler(fakeReq({ body: { email: 'someone@example.com' } }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'terms_not_accepted');
+  assert.equal(sendOtpCalls.length, 0);
+  assert.equal(limiterCalls.length, 0);
+});
+
+test('D15: termsAccepted false is rejected 400 terms_not_accepted, before the limiter or sendOtp run', async () => {
+  const res = fakeRes();
+  await handler(fakeReq({ body: { email: 'someone@example.com', termsAccepted: false, termsVersion: 'draft-0.1' } }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'terms_not_accepted');
+  assert.equal(sendOtpCalls.length, 0);
+  assert.equal(limiterCalls.length, 0);
+});
+
+test('D15: an empty-string termsVersion is rejected 400 terms_not_accepted, before the limiter or sendOtp run', async () => {
+  const res = fakeRes();
+  await handler(fakeReq({ body: { email: 'someone@example.com', termsAccepted: true, termsVersion: '' } }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'terms_not_accepted');
+  assert.equal(sendOtpCalls.length, 0);
+  assert.equal(limiterCalls.length, 0);
+});
+
+test('D15: termsVersion omitted entirely is rejected 400 terms_not_accepted, before the limiter or sendOtp run', async () => {
+  const res = fakeRes();
+  await handler(fakeReq({ body: { email: 'someone@example.com', termsAccepted: true } }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'terms_not_accepted');
+  assert.equal(sendOtpCalls.length, 0);
+  assert.equal(limiterCalls.length, 0);
 });
 
 test('a valid email sends the code and returns 204 with no body', async () => {

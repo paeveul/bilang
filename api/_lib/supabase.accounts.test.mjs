@@ -62,6 +62,15 @@ require.cache[sdkPath] = {
                 return Promise.resolve({ error: null });
               },
             }),
+            update: (patch) => ({
+              eq: (column, value) => {
+                calls.push({ op: 'accounts.update', value, patch });
+                const existing = accountsTable.get(value);
+                if (!existing) return Promise.resolve({ error: { code: 'PGRST116', message: 'not found' } });
+                accountsTable.set(value, { ...existing, ...patch });
+                return Promise.resolve({ error: null });
+              },
+            }),
           };
         }
         if (table === 'terms_acceptances') {
@@ -148,4 +157,43 @@ test('D15 rollback shape: if terms-acceptance insert fails after a fresh insert,
   // way api/auth/verify-code.js's rollback path does on a caught error.
   await mod.deleteOrphanedAccount('user-7');
   assert.equal(accountsTable.has('user-7'), false);
+});
+
+// --- terms_version_seen (Tony's approved MVP1 "cheap half", 2026-10-10) ----
+
+test('getTermsVersionSeen: a freshly-inserted account with no seen version yet reads back undefined/null', async () => {
+  const mod = freshModule();
+  await mod.upsertAccount('user-8');
+  const seen = await mod.getTermsVersionSeen('user-8');
+  assert.ok(seen === null || seen === undefined);
+});
+
+test('updateTermsVersionSeen: writes the given version, readable back via getTermsVersionSeen', async () => {
+  const mod = freshModule();
+  await mod.upsertAccount('user-9');
+  await mod.updateTermsVersionSeen('user-9', '0.0.0-unpublished');
+  const seen = await mod.getTermsVersionSeen('user-9');
+  assert.equal(seen, '0.0.0-unpublished');
+});
+
+test('updateTermsVersionSeen: a second write with a new version overwrites the first', async () => {
+  const mod = freshModule();
+  await mod.upsertAccount('user-10');
+  await mod.updateTermsVersionSeen('user-10', 'old-version');
+  await mod.updateTermsVersionSeen('user-10', 'new-version');
+  const seen = await mod.getTermsVersionSeen('user-10');
+  assert.equal(seen, 'new-version');
+});
+
+test('getTermsVersionSeen: propagates a database error', async () => {
+  const mod = freshModule();
+  accountsTable = {
+    get: () => { throw Object.assign(new Error('connection reset'), { code: '08006' }); },
+  };
+  await assert.rejects(() => mod.getTermsVersionSeen('user-11'));
+});
+
+test('updateTermsVersionSeen: propagates a database error (e.g. unknown account)', async () => {
+  const mod = freshModule();
+  await assert.rejects(() => mod.updateTermsVersionSeen('no-such-user', '0.0.0-unpublished'));
 });

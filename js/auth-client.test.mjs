@@ -51,6 +51,22 @@ test('requestCode: POSTs the email to the versioned request-code route with same
   assert.deepEqual(JSON.parse(calls[0].init.body), { email: 'someone@example.com' });
 });
 
+test('requestCode: sends termsAccepted and termsVersion when provided (tick now gates the send, D15 moved 2026-10-10)', async () => {
+  nextResponse = () => new Response(null, { status: 204 });
+  await requestCode('someone@example.com', { termsAccepted: true, termsVersion: 'draft-0.1' });
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    email: 'someone@example.com',
+    termsAccepted: true,
+    termsVersion: 'draft-0.1',
+  });
+});
+
+test('requestCode: 400 terms_not_accepted rejects with its own code', async () => {
+  nextResponse = () =>
+    jsonResponse(400, { error: 'Please accept the Terms and Privacy Notice to continue.', code: 'terms_not_accepted' });
+  await assert.rejects(requestCode('a@b.co'), (err) => err.code === 'terms_not_accepted');
+});
+
 test('requestCode: 429 throws AuthError with the server code and retryAfterSeconds kept on the body (nothing displayed)', async () => {
   nextResponse = () =>
     jsonResponse(429, {

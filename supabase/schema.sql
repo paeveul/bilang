@@ -261,6 +261,17 @@ create index if not exists splits_account_id_idx on bilang.splits (account_id);
 
 alter table bilang.accounts enable row level security;
 
+-- `accounts.terms_version_seen` — Tony's approved MVP1 "cheap half"
+-- (2026-10-10, relayed via coordinator, bilang-pm-tracker.md v2.80
+-- change-log). GET /api/auth/session silently writes the currently
+-- published VITE_TERMS_VERSION here whenever it differs from what is
+-- already stored, on every signed-in session load — not just new accounts.
+-- No banner, no email, no copy change triggered by this column; the visible
+-- notification mechanism (Tony's recommendation) stays on the MVP1 backlog.
+-- Nullable: pre-existing accounts, and a brand-new account before its first
+-- post-signup session load, start with no seen version.
+alter table bilang.accounts add column if not exists terms_version_seen text;
+
 -- `terms_acceptances` — D15, added 2026-09-23. The timestamped, versioned
 -- acceptance record Item 14 D8 requires and Item 14 §14.5 named as this
 -- item's own build requirement, not a follow-up. Append-only in practice
@@ -323,4 +334,5 @@ revoke all on bilang.terms_acceptances_id_seq from anon, authenticated;
 --   drop table if exists bilang.terms_acceptances;
 --   drop index if exists bilang.splits_account_id_idx;
 --   alter table bilang.splits drop column if exists account_id;
+--   alter table bilang.accounts drop column if exists terms_version_seen;
 --   drop table if exists bilang.accounts;
