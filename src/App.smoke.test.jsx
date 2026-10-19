@@ -129,10 +129,8 @@ test('full creator path: landing -> capture -> parse -> review -> payment -> cre
 
   render(<App />);
 
-  // --- Landing: consent gate ---
-  const consentCheckbox = await screen.findByRole('checkbox');
-  await user.click(consentCheckbox);
-  await user.click(screen.getByRole('button', { name: 'Start a new split' }));
+  // --- Landing: no consent gate (the one tick is on the sign-in screen) ---
+  await user.click(await screen.findByRole('button', { name: 'Start a new split' }));
 
   // --- Capture: upload a receipt photo, triggers parseReceipt() ---
   const fileInput = screen.getByLabelText('Upload receipt photo', { selector: 'input' });
@@ -173,6 +171,36 @@ test('full creator path: landing -> capture -> parse -> review -> payment -> cre
   assert.equal(submittedBody.totals.grand_total, PARSED_RECEIPT.grand_total);
   assert.equal(submittedBody.ownerPaymentHandle, 'DuitNow: 012-3456789 (Test Owner)');
   assert.deepEqual(submittedBody.payers, ['Me'], 'the ordered payers list must be sent to the server');
+});
+
+test('signed-in user on Landing: "Start a new split" goes straight to capture with no second tick (2026-10-19)', async () => {
+  mockFetch();
+  const user = userEvent.setup();
+  render(<App />);
+
+  const start = await screen.findByRole('button', { name: 'Start a new split' });
+  assert.equal(start.disabled, false, 'not gated');
+  assert.equal(screen.queryAllByRole('checkbox').length, 0, 'Landing has no consent tick');
+  await user.click(start);
+  assert.ok(screen.getByLabelText('Upload receipt photo', { selector: 'input' }), 'capture screen reached');
+  assert.equal(screen.queryAllByRole('checkbox').length, 0, 'no tick on capture either');
+});
+
+test('signed out: the sign-in screen comes first; no capture screen and no /parse request before the tick is recorded (2026-10-19)', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push(String(url));
+    if (String(url) === '/api/v1/auth/session') {
+      return { ok: true, status: 200, json: async () => ({ signedIn: false }) };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Sign in to Bilang' });
+  assert.equal(screen.queryByLabelText('Upload receipt photo', { selector: 'input' }), null);
+  assert.equal(screen.queryByRole('button', { name: 'Start a new split' }), null);
+  assert.equal(calls.some((u) => u.includes('/parse')), false);
 });
 
 test('opening the share link fresh (no prior app state — "a private window with no session") renders the payer view from the stored split alone', async () => {

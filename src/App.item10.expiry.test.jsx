@@ -72,8 +72,7 @@ test('scan expiry: the sign-in overlay opens, no error screen, and the same pars
   const user = userEvent.setup();
   render(<App />);
 
-  await user.click(await screen.findByRole('checkbox'));
-  await user.click(screen.getByRole('button', { name: 'Start a new split' }));
+  await user.click(await screen.findByRole('button', { name: 'Start a new split' }));
   await user.upload(screen.getByLabelText('Upload receipt photo', { selector: 'input' }), fakeReceiptFile());
 
   await signInThroughOverlay(user);
@@ -105,8 +104,7 @@ test('split expiry: corrections and payment details survive the sign-in, and the
   render(<App />);
 
   // Scan, then correct the first item's name on the review screen.
-  await user.click(await screen.findByRole('checkbox'));
-  await user.click(screen.getByRole('button', { name: 'Start a new split' }));
+  await user.click(await screen.findByRole('button', { name: 'Start a new split' }));
   await user.upload(screen.getByLabelText('Upload receipt photo', { selector: 'input' }), fakeReceiptFile());
   await screen.findByText('Check the items');
   // Item rows start collapsed; open the first row to reach its name field.

@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AuthScreen from './AuthScreen.jsx';
+import { PHOTO_DISCLOSURE_LINE, MOCK_PRIVACY_NOTICE } from '../legal/mock-legal-content.js';
 import { installFetchStub, uninstallFetchStub, reply } from '../test/fetch-stub.mjs';
 
 const EMAIL = 'ali@example.com';
@@ -256,4 +257,49 @@ test('a startup error from the session check is shown with the server text', () 
   installFetchStub(() => undefined);
   render(<AuthScreen onSignedIn={() => {}} startupError={OUTAGE_TEXT} />);
   assert.equal(screen.getByRole('alert').textContent, OUTAGE_TEXT);
+});
+
+// --- 2026-10-19: single tick also carries the receipt-photo disclosure ---
+// (Alex's request relayed via the orchestrator; Tony's acceptance criteria 1-3.)
+// NOTE: these deliberately avoid getByText(/PLACEHOLDER/) — the photo line is
+// always on screen and must not be matched by (or break) that existing query.
+
+test('the one tick names Terms + Privacy and states, as its own visible line beside it, that the receipt photo goes to Anthropic and is not stored afterwards', () => {
+  installFetchStub(() => undefined);
+  render(<AuthScreen onSignedIn={() => {}} />);
+
+  const tick = screen.getByRole('checkbox');
+  const label = tick.closest('label');
+  assert.ok(label, 'the disclosure sits inside the same label as the single tick');
+  assert.ok(label.textContent.includes('Terms of Service'));
+  assert.ok(label.textContent.includes('Privacy Notice'));
+
+  const line = screen.getByTestId('photo-disclosure');
+  assert.equal(line.textContent, PHOTO_DISCLOSURE_LINE);
+  assert.match(line.textContent, /Anthropic/);
+  assert.match(line.textContent, /never stored afterwards/);
+  assert.equal(line.querySelector('button'), null, 'its own line, not folded into the Terms/Privacy links');
+  assert.equal(screen.getAllByRole('checkbox').length, 1, 'exactly one tick on the screen');
+});
+
+test('unticked: pressing Send does nothing and no code request reaches the network', async () => {
+  const calls = installFetchStub(() => reply(204));
+  const user = userEvent.setup();
+  render(<AuthScreen onSignedIn={() => {}} />);
+
+  await user.type(screen.getByLabelText('Email address'), EMAIL);
+  await user.click(screen.getByRole('button', { name: 'Send me a code' }));
+  assert.equal(calls.length, 0, 'no request-code (and nothing else) before the tick');
+  assert.equal(screen.queryByLabelText('Six-digit code'), null);
+});
+
+test('the Privacy Notice states the same photo disclosure the tick does (Anthropic, not stored)', async () => {
+  installFetchStub(() => undefined);
+  const user = userEvent.setup();
+  render(<AuthScreen onSignedIn={() => {}} />);
+
+  assert.match(MOCK_PRIVACY_NOTICE, /Anthropic/);
+  assert.match(MOCK_PRIVACY_NOTICE, /never saved/);
+  await user.click(screen.getByRole('button', { name: 'Privacy Notice' }));
+  assert.match(screen.getByRole('heading', { name: 'Privacy Notice' }).parentElement.textContent, /Anthropic/);
 });

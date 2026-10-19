@@ -84,16 +84,15 @@ test('full path: sign in, scan, correct, assign, create, share, then open the li
   // 1. Sign in: the page sign-in comes first, then the code.
   await user.type(await screen.findByLabelText('Email address'), 'ali@example.com');
   // Terms tick moved to the email step (Alex, 2026-10-10) — shown to every
-  // user, every time, and required before the code can be sent. The Landing
-  // screen's own consent checkbox has not been reached yet at this point.
+  // user, every time, and required before the code can be sent. As of
+  // 2026-10-19 this is the ONLY tick: Landing has no consent gate any more.
   await user.click(screen.getByRole('checkbox'));
   await user.click(screen.getByRole('button', { name: 'Send me a code' }));
   await user.type(await screen.findByLabelText('Six-digit code'), '424242');
   await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
-  // 2. Landing (consent gate), then start.
-  await user.click(await screen.findByRole('checkbox'));
-  await user.click(screen.getByRole('button', { name: 'Start a new split' }));
+  // 2. Landing (no consent gate), then start.
+  await user.click(await screen.findByRole('button', { name: 'Start a new split' }));
 
   // 3. Scan.
   await user.upload(screen.getByLabelText('Upload receipt photo', { selector: 'input' }), fakeReceiptFile());

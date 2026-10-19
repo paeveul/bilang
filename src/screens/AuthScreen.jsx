@@ -24,9 +24,15 @@
 // called. The terms version is read from VITE_TERMS_VERSION (see
 // termsVersionFrom in ../auth/auth-flow.js) and is not hardcoded here.
 //
+// Single consent tick (2026-10-19, Alex's request relayed via the orchestrator):
+// this tick is now the ONLY one in the app. It covers the Terms of Service, the
+// Privacy Notice and the receipt-photo disclosure (photo sent to Anthropic to be
+// read, not stored afterwards). The photo sentence is its own visible line
+// beside the tick, not folded into the Terms link. LandingScreen no longer has
+// a consent gate. Wording lives in src/legal/mock-legal-content.js.
+//
 // Visible links to the mock Terms of Service / Privacy Notice sit right next
-// to the tick (not footer-only) — see src/legal/mock-legal-content.js for the
-// placeholder copy itself.
+// to the tick (not footer-only).
 import { useEffect, useState } from 'react';
 import { AuthError, requestCode, verifyCode } from '../../js/auth-client.js';
 import {
@@ -35,7 +41,11 @@ import {
   serverMessage,
   termsVersionFrom,
 } from '../auth/auth-flow.js';
-import { MOCK_PRIVACY_NOTICE, MOCK_TERMS_OF_SERVICE } from '../legal/mock-legal-content.js';
+import {
+  MOCK_PRIVACY_NOTICE,
+  MOCK_TERMS_OF_SERVICE,
+  PHOTO_DISCLOSURE_LINE,
+} from '../legal/mock-legal-content.js';
 
 const BUTTON =
   'w-full rounded-lg bg-amber-500 text-white font-semibold text-lg py-3 min-h-[48px] transition disabled:opacity-40 disabled:cursor-not-allowed';
@@ -192,6 +202,9 @@ export default function AuthScreen({
                 Privacy Notice
               </button>
               . Tick this to continue.
+              <span data-testid="photo-disclosure" className="block mt-1">
+                {PHOTO_DISCLOSURE_LINE}
+              </span>
             </span>
           </label>
 
