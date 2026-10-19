@@ -27,7 +27,7 @@ export default function LandingScreen() {
       <ul className="text-sm text-slate-600 space-y-2 bg-white rounded-xl border border-slate-200 p-4">
         <li className="flex gap-2">
           <span>✅</span>
-          <span>No accounts, no app to install</span>
+          <span>No app to install, and the friends you split with don't need an account</span>
         </li>
         <li className="flex gap-2">
           <span>✅</span>
