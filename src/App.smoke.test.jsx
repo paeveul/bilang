@@ -41,6 +41,7 @@ import assert from 'node:assert/strict';
 import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
+import { pickAndConfirm } from './test/capture-helpers.mjs';
 
 // CaptureScreen.jsx (real production code, unmocked here) uses the native
 // FileReader API to turn the uploaded photo into a data URL — jsdom-setup.mjs
@@ -133,9 +134,8 @@ test('full creator path: landing -> capture -> parse -> review -> payment -> cre
   await user.click(await screen.findByRole('button', { name: 'Start a new split' }));
 
   // --- Capture: upload a receipt photo, triggers parseReceipt() ---
-  const fileInput = screen.getByLabelText('Upload receipt photo', { selector: 'input' });
   const file = makeFakeReceiptFile();
-  await user.upload(fileInput, file);
+  await pickAndConfirm(user, file);
 
   // --- Review (post-parse): default equal-split assignment already
   //     resolves both items to the single default payer ('Me') ---
@@ -182,7 +182,7 @@ test('signed-in user on Landing: "Start a new split" goes straight to capture wi
   assert.equal(start.disabled, false, 'not gated');
   assert.equal(screen.queryAllByRole('checkbox').length, 0, 'Landing has no consent tick');
   await user.click(start);
-  assert.ok(screen.getByLabelText('Upload receipt photo', { selector: 'input' }), 'capture screen reached');
+  assert.ok(screen.getByRole('button', { name: 'Take photo' }), 'capture screen reached');
   assert.equal(screen.queryAllByRole('checkbox').length, 0, 'no tick on capture either');
 });
 
@@ -198,7 +198,7 @@ test('signed out: the sign-in screen comes first; no capture screen and no /pars
   render(<App />);
 
   await screen.findByRole('heading', { name: 'Sign in to Bilang' });
-  assert.equal(screen.queryByLabelText('Upload receipt photo', { selector: 'input' }), null);
+  assert.equal(screen.queryByRole('button', { name: 'Take photo' }), null);
   assert.equal(screen.queryByRole('button', { name: 'Start a new split' }), null);
   assert.equal(calls.some((u) => u.includes('/parse')), false);
 });

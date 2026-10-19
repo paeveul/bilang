@@ -14,6 +14,7 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
 import { installFetchStub, uninstallFetchStub, reply } from './test/fetch-stub.mjs';
+import { pickAndConfirm } from './test/capture-helpers.mjs';
 
 globalThis.FileReader = jsdomWindow.FileReader;
 
@@ -73,7 +74,7 @@ test('scan expiry: the sign-in overlay opens, no error screen, and the same pars
   render(<App />);
 
   await user.click(await screen.findByRole('button', { name: 'Start a new split' }));
-  await user.upload(screen.getByLabelText('Upload receipt photo', { selector: 'input' }), fakeReceiptFile());
+  await pickAndConfirm(user, fakeReceiptFile());
 
   await signInThroughOverlay(user);
 
@@ -105,7 +106,7 @@ test('split expiry: corrections and payment details survive the sign-in, and the
 
   // Scan, then correct the first item's name on the review screen.
   await user.click(await screen.findByRole('button', { name: 'Start a new split' }));
-  await user.upload(screen.getByLabelText('Upload receipt photo', { selector: 'input' }), fakeReceiptFile());
+  await pickAndConfirm(user, fakeReceiptFile());
   await screen.findByText('Check the items');
   // Item rows start collapsed; open the first row to reach its name field.
   await user.click(screen.getByRole('button', { name: /Nasi Lemak/ }));

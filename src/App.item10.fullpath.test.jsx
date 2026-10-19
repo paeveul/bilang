@@ -26,6 +26,7 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
 import { installFetchStub, uninstallFetchStub, reply } from './test/fetch-stub.mjs';
+import { pickAndConfirm } from './test/capture-helpers.mjs';
 
 globalThis.FileReader = jsdomWindow.FileReader;
 
@@ -95,7 +96,7 @@ test('full path: sign in, scan, correct, assign, create, share, then open the li
   await user.click(await screen.findByRole('button', { name: 'Start a new split' }));
 
   // 3. Scan.
-  await user.upload(screen.getByLabelText('Upload receipt photo', { selector: 'input' }), fakeReceiptFile());
+  await pickAndConfirm(user, fakeReceiptFile());
   await screen.findByText('Check the items');
 
   // 4. Correct one item name. Item rows start collapsed; open the first row.
