@@ -1,8 +1,13 @@
 -- Bilang MVP-1 schema (Supabase / Postgres)
 --
--- Two tables, deliberately kept separate:
+-- Four tables (the Item 10 account tables are added further down):
 --   1. bilang.splits          — operational data the app needs to function
 --   2. bilang.bill_analytics  — genuinely anonymised, aggregate-only capture (roadmap F7a)
+--   3. bilang.accounts          — signed-in account ids (Item 10)
+--   4. bilang.terms_acceptances — append-only terms acceptance record (Item 10)
+-- Tables that can be edited (splits, accounts) carry a database-maintained
+-- updated_at column; the insert-only tables (bill_analytics, terms_acceptances)
+-- deliberately do not.
 --
 -- Both tables live under a dedicated `bilang` schema, not `public`
 -- (Open Item 21, decided 2026-09-29 — Alex wants a dedicated schema "for more
@@ -42,6 +47,27 @@
 -- anything.
 create schema if not exists bilang;
 grant usage on schema bilang to service_role;
+
+-- Shared trigger function for every table that has an `updated_at` column.
+-- Each such table attaches a BEFORE UPDATE trigger that calls this, so the
+-- database stamps the "last changed" time itself, even if a write tries to
+-- supply a different value. It must exist before any table's trigger is
+-- created. Insert-only tables (bill_analytics, terms_acceptances) have no
+-- updated_at and no trigger. Never use updated_at as a retention anchor or
+-- as a financial-event date; those use their own dedicated columns.
+-- Idempotent (create or replace).
+create or replace function bilang.set_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+revoke all on function bilang.set_updated_at() from public, anon, authenticated;
 
 -- Move the tables out of `public` if they were created there by an earlier
 -- run of this file (true for the test database, which already ran the
@@ -128,6 +154,19 @@ alter table bilang.splits add column if not exists receipt_date date;
 --   alter table bilang.splits drop column if exists receipt_date;
 --   alter table bilang.splits drop column if exists merchant_name;
 
+-- `splits.updated_at` — database-maintained "last changed" time. Set by the
+-- shared bilang.set_updated_at() trigger on every UPDATE of the row (for
+-- example each payer claim); the app never writes it. Rows that existed when
+-- this column was added show the time the statement ran, not their true
+-- last-change time. Not selected by any app query, so it is never returned
+-- to the anonymous payer view. Idempotent.
+alter table bilang.splits add column if not exists updated_at timestamptz not null default now();
+
+drop trigger if exists splits_set_updated_at on bilang.splits;
+create trigger splits_set_updated_at
+  before update on bilang.splits
+  for each row execute function bilang.set_updated_at();
+
 -- Speeds up the future MVP-3 cleanup job's `WHERE expires_at < now()` sweep.
 create index if not exists splits_expires_at_idx on bilang.splits (expires_at);
 
@@ -140,6 +179,10 @@ create index if not exists splits_expires_at_idx on bilang.splits (expires_at);
 -- Howard's technical assessment §5 amendment and the roadmap's E1/F7
 -- discussion for why that distinction is load-bearing, not cosmetic. Do not
 -- add a split_id column to this table.
+--
+-- Deliberately no updated_at column: rows are insert-only and never edited,
+-- so it would always equal created_at, and it would add a second exact
+-- timestamp to a table that is meant to stay anonymous.
 create table if not exists bilang.bill_analytics (
   id             bigserial primary key,
   item_category  text not null check (item_category in ('food', 'drink', 'tax', 'service', 'other')),
@@ -272,6 +315,17 @@ alter table bilang.accounts enable row level security;
 -- post-signup session load, start with no seen version.
 alter table bilang.accounts add column if not exists terms_version_seen text;
 
+-- `accounts.updated_at` — database-maintained "last changed" time. Set by the
+-- shared bilang.set_updated_at() trigger on every UPDATE of the row; the app
+-- never writes it. Rows that existed when this column was added show the time
+-- the statement ran, not their true last-change time. Idempotent.
+alter table bilang.accounts add column if not exists updated_at timestamptz not null default now();
+
+drop trigger if exists accounts_set_updated_at on bilang.accounts;
+create trigger accounts_set_updated_at
+  before update on bilang.accounts
+  for each row execute function bilang.set_updated_at();
+
 -- `terms_acceptances` — D15, added 2026-09-23. The timestamped, versioned
 -- acceptance record Item 14 D8 requires and Item 14 §14.5 named as this
 -- item's own build requirement, not a follow-up. Append-only in practice
@@ -285,6 +339,10 @@ alter table bilang.accounts add column if not exists terms_version_seen text;
 -- key: Item 14 owns the actual version string and its versioning scheme;
 -- this table just records whichever string was current at the moment of
 -- acceptance.
+--
+-- Deliberately no updated_at column: rows are insert-only and never edited,
+-- so a "last changed" time would always equal accepted_at and would suggest
+-- the record can change. accepted_at is the only timestamp this table needs.
 create table if not exists bilang.terms_acceptances (
   id            bigserial primary key,
   account_id    uuid not null references bilang.accounts (id),
@@ -336,3 +394,12 @@ revoke all on bilang.terms_acceptances_id_seq from anon, authenticated;
 --   alter table bilang.splits drop column if exists account_id;
 --   alter table bilang.accounts drop column if exists terms_version_seen;
 --   drop table if exists bilang.accounts;
+
+-- Rollback for the updated_at columns and triggers (manual; safe because no
+-- application code reads the column). Run before any of the rollbacks above
+-- that drop a table, or independently of them:
+--   drop trigger if exists accounts_set_updated_at on bilang.accounts;
+--   alter table bilang.accounts drop column if exists updated_at;
+--   drop trigger if exists splits_set_updated_at on bilang.splits;
+--   alter table bilang.splits drop column if exists updated_at;
+--   drop function if exists bilang.set_updated_at();
