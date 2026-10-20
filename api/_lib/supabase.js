@@ -2,9 +2,9 @@
 //
 // Thin data-access layer: keeps Supabase access code isolated behind one module
 // rather than scattered raw calls throughout the app, so a future database
-// migration stays cheap. This is the only file that talks to the database
-// directly (authentication is isolated the same way in api/_lib/auth.js). If
-// the project ever migrates off Supabase, this is the file that needs to change.
+// migration stays cheap. All database access goes through this module;
+// authentication is isolated the same way in api/_lib/auth.js. If the project
+// ever migrates its database off Supabase, this is the file that needs to change.
 
 const { createClient } = require('@supabase/supabase-js');
 const { computeClaimTotals } = require('./recompute');

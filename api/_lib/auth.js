@@ -1,8 +1,7 @@
 // api/_lib/auth.js
 //
-// The auth boundary. This is the only file in the codebase that imports
-// @supabase/supabase-js for authentication, mirroring the isolation
-// api/_lib/supabase.js provides for data. Handlers never read cookies, never
+// The auth boundary. All authentication code lives here, mirroring the
+// isolation api/_lib/supabase.js provides for database access. Handlers never read cookies, never
 // touch tokens, and never call Supabase Auth directly; if a handler needs to
 // know who is calling, it calls requireAccount().
 //

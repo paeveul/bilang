@@ -1,7 +1,4 @@
-# Receipt-quality fixture harness (Item 17 Step 3)
-
-Reference: `bilang/technical/bilang-mvp1-implementation-plans.md` §17.6 (verification),
-§17.4 Step 3, §17.7 Q2 (the tiered cost ladder this harness is built to test).
+# Receipt-quality fixture harness
 
 This harness answers one question a code review cannot: **is Claude actually
 honest about whether it could read a receipt?** It is not a unit test — it
@@ -10,12 +7,10 @@ Run it by hand, deliberately.
 
 ## Who does what
 
-- **Howard built the harness and this README** (Item 17 Step 3).
-- **Alex takes the ~40 fixture photographs and reviews the CSV** (tracker
-  Dashboard §0.2, row 12 — "Run the ~40-photo harness test," gated on this
-  Step 3 build, explicitly *not* something Howard runs). This is not
-  delegable — it needs a person who can look at a photo and say whether a
-  human could read it.
+- **The maintainers wrote the harness and this README.**
+- **The project owner takes the ~40 fixture photographs and reviews the CSV.**
+  This is deliberately a manual step: it needs a person who can look at a
+  photo and say whether a human could read it.
 
 ## 1. Set up the fixture folder
 
@@ -27,8 +22,8 @@ in git history would contradict that in the most visible place possible.
 2. Add `RECEIPT_FIXTURES_DIR=/absolute/path/to/that/folder` to `.env`
    (already gitignored — this is exactly the kind of local-only value it's
    for).
-3. Drop photos into it. Suggested composition (§17.6's table — each band
-   tests a different failure mode):
+3. Drop photos into it. Suggested composition (each band tests a different
+   failure mode):
 
    | Band | Count | Tests |
    |---|---|---|
@@ -57,8 +52,8 @@ overrides the default output location
 (`scripts/harness-output/tier-<n>-<timestamp>.csv`, gitignored).
 
 **Only move to the next tier if the current one fails a hard gate below.**
-Per §17.6: "the lever order is: (1) field descriptions and prompt wording,
-(2) `effort` up one level, (3) reconsider the enum boundary." Change one
+The order of levers to pull is: (1) field descriptions and prompt wording,
+(2) `effort` up one level, (3) reconsider the enum boundary. Change one
 thing at a time and re-run.
 
 ## 3. The expected-verdict workflow
@@ -88,11 +83,10 @@ values, the `needs_check` distribution — is **reported in the CSV, not
 gated**. There's no ground truth for "should this specific receipt have been
 partial," so nothing invents one.
 
-**Do not proceed to Item 17 Step 4 (wiring the classifier) before both gates
-pass.** A classifier wired to an uncalibrated signal is worse than none — it
+**Do not wire the classifier into the parse endpoint before both gates pass.** A classifier wired to an uncalibrated signal is worse than none — it
 converts a silent problem into a visible one that fires on the wrong inputs.
 
-## 5. Re-run triggers (S18)
+## 5. Re-run triggers
 
 Re-run the full ladder against the fixture set whenever any of the following
 changes:
@@ -108,7 +102,6 @@ changes:
 ## What this harness does not decide
 
 It measures. It does not pick a tier, wire a classifier, or change what ships
-to production — that's Alex reading the CSV, and (for Steps 4-5, once Item 13
-exists) Howard wiring `api/parse.js`'s classifier per §17.3's expression. If a
-higher tier turns out to be necessary, promoting the default tier is a
+to production. That is a person reading the CSV and then wiring
+`api/parse.js`'s classifier. If a higher tier turns out to be necessary, promoting the default tier is a
 one-line change: `DEFAULT_TIER` in `api/_lib/anthropic.js`.
