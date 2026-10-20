@@ -1,0 +1,39 @@
+name: promote-gate
+
+# Runs the comment-hygiene gate (plus tests and build) on every push and pull
+# request, on every branch. Fails if any @dev note or internal reference is in
+# the committed code or the commit/PR text. Not yet enabled as a required
+# check: that is a GitHub settings step (see scripts/README-promote-gate.md).
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Only the newest commit message and the PR title/body are checked: the
+      # earlier history is already public and cannot be rewritten.
+      - name: Collect commit and pull-request text
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          {
+            printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY"
+            git log -n 1 --format=%B
+          } > "$RUNNER_TEMP/gate-message.txt"
+      - name: Gate
+        run: node scripts/promote-gate.mjs --committed --message "@$RUNNER_TEMP/gate-message.txt"

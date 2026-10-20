@@ -1,0 +1,3 @@
+#!/bin/sh
+# Blocks a commit message with internal references or an AI attribution trailer.
+exec node scripts/check-staged.mjs --message "$1"

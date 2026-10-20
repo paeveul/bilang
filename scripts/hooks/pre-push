@@ -1,0 +1,4 @@
+#!/bin/sh
+# Last local check before anything leaves the machine, on every branch.
+# Scan only (fast); the full gate (tests + build) runs in GitHub Actions.
+exec node scripts/promote-gate.mjs --dry-run --committed

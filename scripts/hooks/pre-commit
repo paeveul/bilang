@@ -1,0 +1,4 @@
+#!/bin/sh
+# Blocks a commit whose staged files hold @dev notes or internal references.
+# Install once per clone:  git config core.hooksPath scripts/hooks
+exec node scripts/check-staged.mjs
