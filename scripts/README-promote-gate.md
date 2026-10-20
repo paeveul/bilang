@@ -68,6 +68,10 @@ No `Co-Authored-By` or `Claude-Session` trailer (and no "Generated with" line) i
 
 Plan or section references (`plans 10.3`, `§5.1`, `bilang-*.md`), tracker references, `Item N` / `Step N` / `Checkpoint N`, decision ids (`D4`, `SM7`, `Q3`, `W18`, `R-1`), "Standing Rule", "Open Item / Open Question" and `OQ-n`, attributions (`coordinator`, `relayed`, `flagged for`), agent or owner names, and dates in `YYYY-MM-DD` form. The list lives in `scripts/lib/dev-comments.mjs` (`PATTERNS`).
 
+## Making the check required on GitHub
+
+After the `promote-gate` workflow has run once, a repository admin can make it a required check: Settings, Rules, Rulesets, New branch ruleset. Target the protected branches, tick "Require a pull request before merging" and "Require status checks to pass", add the `gate` check, and tick "Block force pushes" and "Restrict deletions". Menu names change over time, so check GitHub's current documentation on rulesets. To undo, set the ruleset's enforcement to Disabled.
+
 ## Not done yet
 
 Branch creation (`dev`, `testing`, `pre-prod`), installing the hooks, enabling the Action as a required check, and the Vercel Ignored Build Step are separate, separately approved steps.
