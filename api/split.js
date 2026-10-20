@@ -8,15 +8,7 @@
 //      split, returns { id, url }. The server recomputes totals.per_person from
 //      items + assignments + payers and stores its own figures.
 //
-// This is the only file that calls the data-access layer (api/_lib/supabase.js)
-// for operational data. It also fires the anonymised analytics insert (F7a)
-// alongside the operational persist, per the roadmap — a second, genuinely
-// de-identified dataset, not an expansion of the `splits` table.
 //
-// MVP-1 has no creator edit/re-open path (that's MVP-2/C1 scope). The only
-// write after creation is a payer claiming or un-claiming one item (PATCH),
-// which is anonymous by design (Item 24 C7/C13): the payer picks a name from
-// the stored roster and nothing more is checked.
 
 const { createSplit, getSplit, claimSplitItem, insertAnalyticsRows } = require('./_lib/supabase');
 const { requireAccount } = require('./_lib/auth');
@@ -73,11 +65,6 @@ async function handleGet(req, res) {
       version: split.version ?? 0,
       ownerPaymentHandle: split.owner_payment_handle,
       createdAt: split.created_at,
-      // Item 23, D7 — kept snake_case (unlike ownerPaymentHandle/createdAt
-      // above) to match `parsed.merchant_name`/`parsed.receipt_date` on the
-      // review screen (§23.3) and the column names themselves — display-only,
-      // absent (not a placeholder) when the column is missing (an old split)
-      // or the value itself was never read.
       merchant_name: split.merchant_name ?? null,
       receipt_date: split.receipt_date ?? null,
     });
@@ -103,8 +90,6 @@ function stripClaimedFlags(assignments) {
 }
 
 async function handlePost(req, res) {
-  // Item 10 Step 8 (plans §10.3): session check first, before body validation.
-  // The accountId is persisted to splits.account_id; it is never returned by GET.
   const accountId = await requireAccount(req, res);
   if (!accountId) return;
 
@@ -150,10 +135,6 @@ async function handlePost(req, res) {
   try {
     await createSplit({ id, items, assignments, totals, payers, ownerPaymentHandle, expiresAt, merchantName, receiptDate, accountId });
 
-    // Roadmap F7(a) — anonymised analytics capture, MVP-1 scope. Fire-and-
-    // forget, alongside (not instead of) the operational persist above. No
-    // name, no payment handle, no reversible link back to this split's id —
-    // see supabase/schema.sql for why that's a hard requirement, not a nicety.
     const analyticsRows = items.map((item) => ({
       item_category: item.category || 'other',
       amount: item.line_total,
@@ -169,23 +150,7 @@ async function handlePost(req, res) {
   }
 }
 
-/**
- * Claim or un-claim one item. Read the row, decide in api/_lib/claim.js, then
- * write with claimSplitItem, which applies only if `version` has not moved
- * since the read. A lost race is re-read and re-decided (max 3 attempts); if
- * the item was taken meanwhile the re-decision is a calm 409. claimSplitItem
- * recomputes `totals` from the new `assignments` (Item 21 Step 4 / R6) and
- * writes them in the same version-guarded statement as the claim, so a
- * stored claim and its stored totals can never disagree.
- */
 async function handlePatch(req, res) {
-  // Release switch. CLAIMS_ENABLED must be exactly the string 'true'; unset or
-  // anything else is off. It stays off until Item 21 Step 4 (Build Order 2B:
-  // recompute the totals inside the claim write) lands, because a claim changes
-  // assignments but not the stored totals, so the stored per-person figures
-  // would go stale. Off answers with the same body as a split with no roster,
-  // and touches neither validation nor the claim state. Read on every request
-  // so it is a configuration change, not a redeploy of code.
   if (process.env.CLAIMS_ENABLED !== 'true') {
     res.status(409).json({ code: 'claiming_unavailable' });
     return;

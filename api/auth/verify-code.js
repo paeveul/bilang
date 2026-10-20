@@ -1,19 +1,16 @@
-// api/auth/verify-code.js — Vercel serverless function. Item 10 Checkpoint
-// 2, Step 7.
+// api/auth/verify-code.js - Vercel serverless function.
 //
 // POST { email, code, termsAccepted, termsVersion } -> 200 { accountId } +
-// three Set-Cookie headers, per plans §10.3's endpoint contract.
+// three Set-Cookie headers.
 //
-// Order of operations, exactly as specified in §10.3 (this order is
-// load-bearing — do not reshuffle it):
-//   1. verify-side rate limit (D9 — counts every attempt, including wrong
-//      codes)
+// Order of operations (this order is load-bearing; do not reshuffle it):
+//   1. verify-side rate limit (counts every attempt, including wrong codes)
 //   2. verify with Supabase (verifyOtp)
 //   3. upsert the accounts row, noting inserted vs matched-existing
-//   4. if inserted: require termsAccepted===true + non-empty termsVersion
-//      (D15) — on failure, roll back the just-inserted accounts row and
-//      refuse with 400 terms_not_accepted, BEFORE any cookie is set
-//   5. if inserted: write the terms_acceptances row — on failure, roll back
+//   4. if inserted: require termsAccepted===true + non-empty termsVersion; on
+//      failure, roll back the just-inserted accounts row and refuse with 400
+//      terms_not_accepted, BEFORE any cookie is set
+//   5. if inserted: write the terms_acceptances row; on failure, roll back
 //      the accounts row and refuse with 500, BEFORE any cookie is set
 //   6. issue session cookies; respond 200
 
@@ -89,9 +86,9 @@ module.exports = async function handler(req, res) {
     res.status(503).json(AUTH_UNAVAILABLE_RESPONSE);
     return;
   }
-  // Wrong and expired codes both land here (verifyOtp returns null for
-  // either) — deliberately not distinguished, per plans §10.3: telling an
-  // attacker which one it was tells them whether a code is still live.
+  // Wrong and expired codes both land here (verifyOtp returns null for either)
+  // and are deliberately not distinguished: telling an attacker which one it was
+  // tells them whether a code is still live.
   if (!session || !session.user || !session.user.id) {
     res.status(401).json(INVALID_CODE_RESPONSE);
     return;
@@ -111,9 +108,8 @@ module.exports = async function handler(req, res) {
   if (upsertResult.inserted) {
     const termsOk = termsAccepted === true && typeof termsVersion === 'string' && termsVersion.length > 0;
     if (!termsOk) {
-      // D15: an account must never exist with no acceptance record. Roll
-      // back the insert this same request just made, before any cookie is
-      // set.
+      // An account must never exist with no acceptance record. Roll back the
+      // insert this same request just made, before any cookie is set.
       try {
         await deleteOrphanedAccount(accountId);
       } catch (rollbackErr) {

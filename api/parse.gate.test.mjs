@@ -1,4 +1,3 @@
-// api/parse.gate.test.mjs — Item 10 Step 8: POST /api/parse behind requireAccount.
 //
 // The real handler, with the auth layer and the Anthropic call replaced by
 // stubs. No network, no Supabase, no Claude. The real requireAccount is

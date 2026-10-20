@@ -1,4 +1,3 @@
-// api/_lib/cookies.test.mjs — Item 10 Checkpoint 1, Step 4.
 //
 // Exercises readCookie/serializeCookie against a fake request object and a
 // fake response header array — no real HTTP involved.

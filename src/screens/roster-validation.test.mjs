@@ -1,6 +1,3 @@
-// src/screens/roster-validation.test.mjs — Item 24 Step 6.
-// Run: node --test src/screens/roster-validation.test.mjs
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateRoster, MAX_NAME_LEN } from './roster-validation.js';

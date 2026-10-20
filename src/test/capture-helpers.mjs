@@ -1,6 +1,3 @@
-// src/test/capture-helpers.mjs — shared steps for driving the capture screen
-// (two controls + confirm step, 2026-10-20). jsdom never fires <img> load
-// events, so the helper fires one by hand, as a real browser would.
 import { screen, fireEvent } from '@testing-library/react';
 
 // Choose a photo through the camera (default) or gallery input and wait for

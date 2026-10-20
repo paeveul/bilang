@@ -1,20 +1,16 @@
-// api/auth/session.js — Vercel serverless function. Item 10 Checkpoint 2,
-// Step 7. Extended 2026-10-10 (Tony's approved MVP1 "cheap half", relayed via
-// coordinator, bilang-pm-tracker.md v2.80 change-log).
+// api/auth/session.js - Vercel serverless function.
 //
-// GET /api/auth/session -> 200 { signedIn, accountId? }. NEVER 401 — this
-// endpoint answers a question, it does not gate anything (plans §10.3).
-// Runs the same refresh path requireAccount uses, so simply opening the app
-// extends a rolling session — but writes no error response of its own.
+// GET /api/auth/session -> 200 { signedIn, accountId? }. NEVER 401: this
+// endpoint answers a question, it does not gate anything. It runs the same
+// refresh path requireAccount uses, so simply opening the app extends a rolling
+// session, but it writes no error response of its own.
 //
-// On every successful GET (signedIn: true), this handler also silently
-// syncs accounts.terms_version_seen to the currently published
-// VITE_TERMS_VERSION when the two differ — Tony's proposal: "add one column
-// on accounts, updated silently when a signed-in session loads and differs
-// from the current published version." No banner, no email, no copy; the
-// response shape is unchanged. A sync failure (missing env var, DB error) is
-// logged and swallowed — it must never turn a working session check into an
-// error response.
+// On every successful GET (signedIn: true), this handler also silently syncs
+// accounts.terms_version_seen to the currently published VITE_TERMS_VERSION
+// when the two differ. No banner, no email, no copy; the response shape is
+// unchanged. A sync failure (missing env var, DB error) is logged and
+// swallowed: it must never turn a working session check into an error
+// response.
 //
 // DELETE /api/auth/session -> 204, clears all three cookies. Revokes the
 // refresh token upstream on a best-effort basis; a failed upstream revoke

@@ -1,5 +1,3 @@
-// src/App.item10.expiry.test.jsx — Item 10 Checkpoint 4, Step 11: mid-flow
-// session expiry (plans §10.3 "Mid-flow expiry", §10.6 scenario 9).
 //
 // Rule under test: a session_expired reply during scanning or splitting opens
 // the sign-in form above the current screen, never shows the error screen,
@@ -48,9 +46,6 @@ test.afterEach(() => {
 async function signInThroughOverlay(user) {
   await screen.findByRole('heading', { name: 'Sign in to keep going' });
   await user.type(screen.getByLabelText('Email address'), 'ali@example.com');
-  // Terms tick moved to the email step (Alex, 2026-10-10) — shown to every
-  // user, every time, and required before the code can be sent. Only the
-  // overlay's own checkbox is on screen at this point in the flow.
   await user.click(screen.getByRole('checkbox'));
   await user.click(screen.getByRole('button', { name: 'Send me a code' }));
   await user.type(await screen.findByLabelText('Six-digit code'), '654321');

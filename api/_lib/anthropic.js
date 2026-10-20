@@ -1,22 +1,7 @@
 // api/_lib/anthropic.js
 //
-// Thin wrapper around the Anthropic SDK for the receipt-parsing call. Owns:
-// the model choice, the strict tool-use schema (roadmap D2 — never let the
-// model free-generate numerals), and the single messages.create() call.
-// Nothing else in the app should import @anthropic-ai/sdk directly.
 //
-// Model: claude-sonnet-5, per the roadmap's explicit product decision (D1) —
-// accuracy on messy/faded/handwritten Malaysian receipts matters more than
-// the small cost gap vs Haiku 4.5. Do not swap this for Haiku without
-// re-reading D1's reasoning; Haiku↔Sonnet auto-routing is explicit MVP-3
-// scope (D5), not built here.
 //
-// Item 17 (unreadable-receipt signal) — plan doc
-// bilang-mvp1-implementation-plans.md §17, Steps 1-2 of 17.4. `read_quality`,
-// `unreadable_reason` and per-item `needs_check` (17.3) let the model report
-// "I could not read this" instead of returning a plausible-looking invention.
-// `strict: true` and forced `tool_choice` are unchanged (S4/S5) — the fix
-// widens the schema's vocabulary, it does not loosen its guarantees.
 
 const Anthropic = require('@anthropic-ai/sdk');
 
@@ -78,11 +63,6 @@ const RECEIPT_TOOL = {
         type: 'number',
         description: 'Final total printed on the receipt, in RM.',
       },
-      // Item 23 (merchant name + receipt date) — D1: both optional, left out
-      // of `required` below. A receipt can be cropped or faded exactly where
-      // the name or date sits, and a guessed value is worse than none, same
-      // "never invent a number/value you cannot read" doctrine the rest of
-      // this schema already follows.
       merchant_name: {
         type: 'string',
         description: 'Restaurant/merchant name exactly as printed, if legible.',
@@ -91,11 +71,6 @@ const RECEIPT_TOOL = {
         type: 'string',
         description: 'Receipt date in ISO YYYY-MM-DD format, if legible. Convert from whatever format is printed.',
       },
-      // Item 17 (S1/S2, 17.3) — both required, both enums. `read_quality` is
-      // the receipt-level verdict; `unreadable_reason` always carries a value
-      // ('none' when read_quality is 'clear') rather than being optional, so
-      // the model cannot quietly omit bad news the way it could omit an
-      // optional field.
       read_quality: {
         type: 'string',
         enum: ['clear', 'partial', 'unreadable'],
@@ -117,17 +92,6 @@ const RECEIPT_TOOL = {
   },
 };
 
-// Item 17, §17.7 Q2 — the cost/latency ladder. S9/S10 ("adaptive thinking,
-// effort: medium") were revised from a settled default to the top of a
-// three-tier ladder that 17.6's fixture harness resolves empirically,
-// cheapest tier first, per Alex's explicit cost concern (2026-08-17,
-// "shouldn't be more than what users are already paying for... it should be
-// plain and simple OCR"). Tier 1 — thinking disabled, today's `effort: low`,
-// only the prompt wording changes — is the production default until a
-// harness run against Alex's real fixture photos (tracker Dashboard §0.2
-// row 12, still pending) proves a higher tier is actually needed to clear
-// 17.6's two hard gates. Promoting the default is a one-line change here,
-// not a schema or data-model change.
 const CALL_TIERS = {
   1: { thinking: { type: 'disabled' }, output_config: { effort: 'low' }, max_tokens: 4096 },
   2: { thinking: { type: 'adaptive' }, output_config: { effort: 'low' }, max_tokens: 8192 },
@@ -172,10 +136,6 @@ function getClient() {
  * strict tool-use. The image buffer is never persisted anywhere by this
  * function or anything it calls — it lives only in this request's memory.
  *
- * Item 17 return-shape note (17.3): the resolved value carries `model` and
- * `stopReason` alongside `parsed` for the harness (17.6) and the server log
- * only — callers that just want the receipt (api/parse.js) read `.parsed`
- * and never forward `.model`/`.stopReason` into a client-facing response.
  *
  * @param {string} base64Image - raw base64 image data (no data: URI prefix)
  * @param {string} mediaType - 'image/jpeg' | 'image/png' | 'image/webp'
@@ -226,12 +186,6 @@ async function parseReceipt(base64Image, mediaType, tier) {
     ],
   });
 
-  // Item 17, S9-S11 consequence: with thinking on, max_tokens bounds thinking
-  // and response text together, so a long receipt can truncate the tool call
-  // before it completes. Guarded before we go looking for tool_use so a
-  // truncation is diagnosable in the logs as its own thing, rather than
-  // falling through to the generic "no tool_use block" throw below and
-  // looking identical to an ordinary outage.
   if (response.stop_reason === 'max_tokens') {
     const err = new Error('Model response was truncated at max_tokens before completing the tool call');
     err.code = 'max_tokens_truncated';

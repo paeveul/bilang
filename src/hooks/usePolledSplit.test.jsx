@@ -1,10 +1,3 @@
-// src/hooks/usePolledSplit.test.jsx — Item 24 Step 7. Exercises the hook
-// through a tiny harness component (no @testing-library/react-hooks
-// dependency — same "render a harness that renders the thing" pattern
-// ReviewScreen.validation.test.jsx uses). Covers: initial fetch, the
-// stale-version discard (C12), claim() folding a successful PATCH straight
-// into state, claim() folding a 409 already_claimed body in too, and the
-// hidden-tab pause not polling again until visibility returns.
 //
 // Run: node --import ./src/test/register-jsx.mjs --test src/hooks/usePolledSplit.test.jsx
 import '../test/jsdom-setup.mjs';
@@ -111,8 +104,6 @@ test('claim(): a 409 already_claimed still folds the returned current state in, 
   });
   assert.equal(result.outcome, 'error');
   assert.equal(result.code, 'already_claimed');
-  // The current server state (someone else's winning claim) is still shown —
-  // §24.3: "the client shows the current state and surfaces no error".
   assert.equal(screen.getByTestId('version').textContent, '1');
 });
 

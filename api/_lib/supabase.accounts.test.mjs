@@ -1,4 +1,3 @@
-// api/_lib/supabase.accounts.test.mjs — Item 10 Checkpoint 2, Step 7.
 //
 // upsertAccount / recordTermsAcceptance / deleteOrphanedAccount against a
 // stubbed Supabase client. A separate file from supabase.test.mjs so its own
@@ -158,8 +157,6 @@ test('D15 rollback shape: if terms-acceptance insert fails after a fresh insert,
   await mod.deleteOrphanedAccount('user-7');
   assert.equal(accountsTable.has('user-7'), false);
 });
-
-// --- terms_version_seen (Tony's approved MVP1 "cheap half", 2026-10-10) ----
 
 test('getTermsVersionSeen: a freshly-inserted account with no seen version yet reads back undefined/null', async () => {
   const mod = freshModule();

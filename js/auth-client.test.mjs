@@ -1,6 +1,3 @@
-// js/auth-client.test.mjs — Item 10 Checkpoint 3, Step 9.
-// fetch is stubbed. Nothing here reaches the network, Supabase or email.
-
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {

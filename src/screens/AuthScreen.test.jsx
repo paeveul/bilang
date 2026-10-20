@@ -1,14 +1,4 @@
-// src/screens/AuthScreen.test.jsx — Item 10 Checkpoint 4, Step 10: the sign-in
-// screen against a stubbed network. Every request goes through
-// src/test/fetch-stub.mjs; the real js/auth-client.js runs on top of it.
-// No Supabase, Anthropic or email call can happen from here.
 //
-// Rewritten 2026-10-10 (Alex, relayed via coordinator — bilang-pm-tracker.md
-// v2.78 change-log, D15 moved to request-code): the terms tick is now shown
-// to every user on the email step, every time, not revealed only after a
-// first-time refusal. "Send me a code" stays disabled until ticked, and both
-// request-code and verify-code now carry termsAccepted/termsVersion on every
-// call (not conditionally, and not only for first-time accounts).
 import '../test/jsdom-setup.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -258,11 +248,6 @@ test('a startup error from the session check is shown with the server text', () 
   render(<AuthScreen onSignedIn={() => {}} startupError={OUTAGE_TEXT} />);
   assert.equal(screen.getByRole('alert').textContent, OUTAGE_TEXT);
 });
-
-// --- 2026-10-19: single tick also carries the receipt-photo disclosure ---
-// (Alex's request relayed via the orchestrator; Tony's acceptance criteria 1-3.)
-// NOTE: these deliberately avoid getByText(/PLACEHOLDER/) — the photo line is
-// always on screen and must not be matched by (or break) that existing query.
 
 test('the one tick names Terms + Privacy and states, as its own visible line beside it, that the receipt photo goes to Anthropic and is not stored afterwards', () => {
   installFetchStub(() => undefined);

@@ -1,35 +1,32 @@
 -- Bilang MVP-1 schema (Supabase / Postgres)
 --
--- Four tables (the Item 10 account tables are added further down):
---   1. bilang.splits          — operational data the app needs to function
---   2. bilang.bill_analytics  — genuinely anonymised, aggregate-only capture (roadmap F7a)
---   3. bilang.accounts          — signed-in account ids (Item 10)
---   4. bilang.terms_acceptances — append-only terms acceptance record (Item 10)
+-- Four tables (the account tables are added further down):
+--   1. bilang.splits            - operational data the app needs to function
+--   2. bilang.bill_analytics    - genuinely anonymised, aggregate-only capture
+--   3. bilang.accounts          - signed-in account ids
+--   4. bilang.terms_acceptances - append-only terms acceptance record
 -- Tables that can be edited (splits, accounts) carry a database-maintained
 -- updated_at column; the insert-only tables (bill_analytics, terms_acceptances)
 -- deliberately do not.
 --
--- Both tables live under a dedicated `bilang` schema, not `public`
--- (Open Item 21, decided 2026-09-29 — Alex wants a dedicated schema "for more
--- scrutiny over database access"). This file MOVES the tables rather than
+-- All tables live under a dedicated `bilang` schema, not `public`, for more
+-- scrutiny over database access. This file MOVES the tables rather than
 -- dropping and recreating them: `alter table ... set schema` preserves every
 -- existing row and column definition, and the table no longer exists under
--- `public` afterwards — nothing is left behind in the old location. This is
+-- `public` afterwards, so nothing is left behind in the old location. This is
 -- deliberately safer than a drop-and-recreate, which would destroy any rows
--- already stored, and was flagged to Alex as the default approach unless he
--- wanted drop/recreate instead.
+-- already stored.
 --
--- Manual setup step for Alex: paste this whole file into the Supabase
--- dashboard's SQL Editor (Project -> SQL Editor -> New query) and run it once.
--- Nothing in this repo runs migrations automatically — this .sql file is the
--- single source of truth for the schema and is applied by hand.
+-- Manual setup step: paste this whole file into the Supabase dashboard's SQL
+-- Editor (Project -> SQL Editor -> New query) and run it once. Nothing in this
+-- repo runs migrations automatically; this .sql file is the single source of
+-- truth for the schema and is applied by hand.
 --
--- >>> RUN THIS IN BOTH DATABASES <<<
--- This file must be applied to BOTH the test database (`paeveul-as-testdb`)
--- now, and later to the production database, before Item 24 (payer
--- item-claiming) ships to production (Open Item 20). Re-running it is safe
--- either way — every statement below is idempotent (see the per-step notes).
---
+-- >>> RUN THIS IN EVERY DATABASE <<<
+-- This file must be applied to every database the app uses (the test database,
+-- and later the production database) before the payer item-claiming feature
+-- ships there. Re-running it is safe either way: every statement below is
+-- idempotent (see the per-step notes).
 -- >>> DASHBOARD SETTING THIS FILE CANNOT SET <<<
 -- After running this SQL, go to Settings -> API in the Supabase dashboard for
 -- THIS project and add `bilang` to "Exposed schemas". PostgREST (the API
@@ -116,18 +113,18 @@ create table if not exists bilang.splits (
   expires_at            timestamptz not null          -- retention window; see RETENTION_DAYS in .env.example
 );
 
--- Item 24 (payer item-claiming) — additive columns on `bilang.splits`.
+-- Payer item-claiming: additive columns on `bilang.splits`.
 -- Idempotent: safe to re-run, and safe on a database that already holds rows
 -- (existing splits get payers = NULL and version = 0; nothing is backfilled,
 -- splits expire in RETENTION_DAYS anyway). Apply by hand like the rest of this
--- file. Nothing in the app reads or writes these columns until the Item 24
--- code steps land, so applying this early breaks nothing. Targets
--- `bilang.splits` (not `public.splits`) because by the time anyone runs this
--- file the table has already moved to `bilang` by the block above.
---   payers  — ordered roster of payer names (jsonb array of strings). NULL on
+-- file. Nothing in the app reads or writes these columns until the claiming
+-- code lands, so applying this early breaks nothing. Targets `bilang.splits`
+-- (not `public.splits`) because by the time anyone runs this file the table
+-- has already moved to `bilang` by the block above.
+--   payers  - ordered roster of payer names (jsonb array of strings). NULL on
 --             splits created before this column existed; those cannot be
 --             claimed against.
---   version — compare-and-swap counter, bumped by every successful claim write.
+--   version - compare-and-swap counter, bumped by every successful claim write.
 alter table bilang.splits add column if not exists payers  jsonb;
 alter table bilang.splits add column if not exists version integer not null default 0;
 --
@@ -136,16 +133,15 @@ alter table bilang.splits add column if not exists version integer not null defa
 --   alter table bilang.splits drop column if exists version;
 --   alter table bilang.splits drop column if exists payers;
 
--- Item 23 (merchant name + receipt date) — additive columns on
--- `bilang.splits`. Same idempotent pattern as the payers/version columns
--- above: safe to re-run, safe on a database that already holds rows
--- (existing splits get both columns NULL, nothing backfilled). No index on
--- either (§15.4 — neither is ever queried or filtered on; D3). Targets
--- `bilang.splits`, not `public.splits`, for the same reason as the block
--- above: by the time anyone runs this file the table has already moved to
--- `bilang`.
---   merchant_name — restaurant/merchant name exactly as printed, if legible.
---   receipt_date  — receipt date, if legible.
+-- Merchant name and receipt date: additive columns on `bilang.splits`. Same
+-- idempotent pattern as the payers/version columns above: safe to re-run, safe
+-- on a database that already holds rows (existing splits get both columns
+-- NULL, nothing backfilled). No index on either: neither is ever queried or
+-- filtered on. Targets `bilang.splits`, not `public.splits`, for the same
+-- reason as the block above: by the time anyone runs this file the table has
+-- already moved to `bilang`.
+--   merchant_name - restaurant/merchant name exactly as printed, if legible.
+--   receipt_date  - receipt date, if legible.
 alter table bilang.splits add column if not exists merchant_name text;
 alter table bilang.splits add column if not exists receipt_date date;
 --
@@ -170,15 +166,14 @@ create trigger splits_set_updated_at
 -- Speeds up the future MVP-3 cleanup job's `WHERE expires_at < now()` sweep.
 create index if not exists splits_expires_at_idx on bilang.splits (expires_at);
 
--- Anonymised, de-identified analytics dataset (roadmap F7a — MVP-1 scope,
--- capture only; reporting/aggregation against it is MVP-3 scope).
+-- Anonymised, de-identified analytics dataset (capture only; reporting and
+-- aggregation against it come later).
 --
--- Deliberately minimal: item category, amount, timestamp — nothing else.
--- No name, no payment handle, and NO foreign key back to `splits.id`. This is
--- a genuine severance (true anonymisation), not mere pseudonymisation — see
--- Howard's technical assessment §5 amendment and the roadmap's E1/F7
--- discussion for why that distinction is load-bearing, not cosmetic. Do not
--- add a split_id column to this table.
+-- Deliberately minimal: item category, amount, timestamp, nothing else. No
+-- name, no payment handle, and NO foreign key back to `splits.id`. This is a
+-- genuine severance (true anonymisation), not mere pseudonymisation, and that
+-- distinction is load-bearing, not cosmetic. Do not add a split_id column to
+-- this table.
 --
 -- Deliberately no updated_at column: rows are insert-only and never edited,
 -- so it would always equal created_at, and it would add a second exact
@@ -190,16 +185,10 @@ create table if not exists bilang.bill_analytics (
   created_at     timestamptz not null default now()
 );
 
--- Row Level Security (closes Open Item 19's flagged gap — confirmed with
--- Alex 2026-09-29, before this file was first applied to any database).
--- This is the same posture already used by every other Bilang table in the
--- implementation plan (accounts, terms_acceptances, payment_purchases,
--- payment_events, the credit_lots/holds/transactions/shortfalls group,
--- account_holds, automation_runs — see
--- bilang/technical/bilang-mvp1-implementation-plans.md): RLS enabled, no
--- policies, denying every row to every role by default. `splits` and
--- `bill_analytics` predate that pattern being established and were the two
--- tables Open Item 19 flagged as missing it.
+-- Row Level Security. Same posture used by every other Bilang table: RLS
+-- enabled, no policies, denying every row to every role by default. `splits`
+-- and `bill_analytics` predate that pattern being established and were the two
+-- tables missing it.
 --
 -- This is a second, independent lock, not a duplicate of the GRANT/REVOKE
 -- block below: GRANT decides whether a role can touch the table at all; RLS
@@ -213,19 +202,18 @@ create table if not exists bilang.bill_analytics (
 alter table bilang.splits enable row level security;
 alter table bilang.bill_analytics enable row level security;
 
--- Grants (Open Item 19 — Supabase's Oct-30 notice: new/custom-schema tables
--- get NO automatic grants, unlike a first-party table under `public`, which
--- Supabase seeds with default privileges today). Bilang's server (see
--- api/_lib/supabase.js) is the ONLY caller and it uses exclusively the
--- SUPABASE_SERVICE_ROLE_KEY — no anon or authenticated-role access is used
+-- Grants. A custom schema gets NO automatic grants (unlike a first-party table
+-- under `public`, which Supabase seeds with default privileges today). Bilang's
+-- server (see api/_lib/supabase.js) is the only caller and it uses exclusively
+-- the SUPABASE_SERVICE_ROLE_KEY: no anon or authenticated-role access is used
 -- or wanted anywhere in this app. Grants below are scoped to the exact
 -- operations each table's code path actually performs (checked against
 -- api/_lib/supabase.js, the only file that talks to the database):
---   bilang.splits         — createSplit (insert), getSplit (select),
---                            claimSplitItem (update). No deletes anywhere in
---                            the app. Not append-only.
---   bilang.bill_analytics — insertAnalyticsRows (insert) only. No select,
---                           update, or delete anywhere in the app — this
+--   bilang.splits         - createSplit (insert), getSplit (select),
+--                           claimSplitItem (update). No deletes anywhere in
+--                           the app. Not append-only.
+--   bilang.bill_analytics - insertAnalyticsRows (insert) only. No select,
+--                           update, or delete anywhere in the app; this
 --                           table IS append-only in practice.
 grant select, insert, update on bilang.splits to service_role;
 grant insert on bilang.bill_analytics to service_role;
@@ -244,13 +232,13 @@ revoke all on bilang.splits from anon, authenticated;
 revoke all on bilang.bill_analytics from anon, authenticated;
 revoke all on bilang.bill_analytics_id_seq from anon, authenticated;
 
--- Not implemented in this pass (MVP-3 scope, per roadmap §5):
+-- Not implemented here (later scope):
 --   - A scheduled cleanup job (Supabase Edge Function or pg_cron) that
 --     archives-then-deletes `bilang.splits` rows past their `expires_at`.
---   - Retention-window tuning (7 vs 30 days is Open Question OQ-6, undecided).
+--   - Retention-window tuning (7 vs 30 days is undecided).
 --   - Usage reporting/aggregation queries against `bilang.bill_analytics`.
--- The `expires_at` column above exists now specifically so that future job
--- has something correct to act on from day one.
+-- The `expires_at` column above exists now specifically so that future job has
+-- something correct to act on from day one.
 
 -- Rollback (manual — moves the tables back to `public`; run the reverse of
 -- the move above, does not touch data, then optionally drop the now-empty
@@ -264,55 +252,46 @@ revoke all on bilang.bill_analytics_id_seq from anon, authenticated;
 --   drop schema if exists bilang;  -- only after both tables above are moved out
 
 -- =============================================================================
--- Item 10 (account + email OTP sign-in), Checkpoint 1 Step 3.
--- Source: bilang/technical/bilang-mvp1-implementation-plans.md §10.3, the
--- "Database changes" block, plus D15 (terms_acceptances, added 2026-09-23).
+-- Account and email OTP sign-in tables.
 -- Same posture as every table above: dedicated `bilang` schema, RLS enabled
 -- with NO policies (deny-by-default; the service-role key inside
--- api/_lib/auth.js and api/_lib/supabase.js is the only caller and bypasses
--- RLS entirely), explicit grants scoped to exactly what this item's code
--- path performs, explicit revokes from anon/authenticated as defence in
--- depth. Manual application only — Alex runs this by hand in the Supabase
--- SQL editor, same as every other block in this file. NOT run against any
--- live database by Howard.
+-- api/_lib/auth.js and api/_lib/supabase.js is the only caller and bypasses RLS
+-- entirely), explicit grants scoped to exactly what this feature's code path
+-- performs, explicit revokes from anon/authenticated as defence in depth.
+-- Manual application only: run by hand in the Supabase SQL editor, same as
+-- every other block in this file.
 -- =============================================================================
 
--- `accounts` — D11: keyed by the Supabase auth user id (accounts.id), but
--- deliberately NOT foreign-keyed to `auth.users`. Every Bilang table
--- references `accounts`, never `auth.users`, so a future auth-provider
--- change never has to touch application schema (§10.2, "Lock-in, assessed
--- honestly"). No email or other PII column here — the verified email lives
--- only in Supabase's own `auth.users` (§10.3 note, "No email address is
--- stored in Bilang's own schema").
+-- `accounts`: keyed by the Supabase auth user id (accounts.id), but
+-- deliberately NOT foreign-keyed to `auth.users`. Every Bilang table references
+-- `accounts`, never `auth.users`, so a future auth-provider change never has to
+-- touch application schema. No email or other PII column here: the verified
+-- email lives only in Supabase's own `auth.users`.
 create table if not exists bilang.accounts (
   id          uuid primary key,
   created_at  timestamptz not null default now()
 );
 
--- `splits.account_id` — nullable at the database level because rows
--- predating this column exist; required at the application layer instead
--- (POST /api/split refuses without a session — that gate is Item 10 Step 8,
--- not part of this checkpoint). Not a foreign key target for any SELECT the
--- app performs today: the existing GET /api/split column list in
--- api/_lib/supabase.js (SPLIT_COLUMNS) is untouched by this file and must
--- stay untouched when Step 8 threads accountId through createSplit — adding
+-- `splits.account_id`: nullable at the database level because rows predating
+-- this column exist; required at the application layer instead (POST
+-- /api/split refuses without a session). Not a foreign key target for any
+-- SELECT the app performs today: the existing GET /api/split column list in
+-- api/_lib/supabase.js (SPLIT_COLUMNS) is untouched by this file and must stay
+-- untouched when createSplit starts threading accountId through: adding
 -- account_id to that SELECT list would leak the creator's account id to the
--- anonymous payer view (§10.3, "must never appear in the GET /api/split
--- response").
+-- anonymous payer view.
 alter table bilang.splits add column if not exists account_id uuid references bilang.accounts (id);
 create index if not exists splits_account_id_idx on bilang.splits (account_id);
 
 alter table bilang.accounts enable row level security;
 
--- `accounts.terms_version_seen` — Tony's approved MVP1 "cheap half"
--- (2026-10-10, relayed via coordinator, bilang-pm-tracker.md v2.80
--- change-log). GET /api/auth/session silently writes the currently
--- published VITE_TERMS_VERSION here whenever it differs from what is
--- already stored, on every signed-in session load — not just new accounts.
--- No banner, no email, no copy change triggered by this column; the visible
--- notification mechanism (Tony's recommendation) stays on the MVP1 backlog.
--- Nullable: pre-existing accounts, and a brand-new account before its first
--- post-signup session load, start with no seen version.
+-- `accounts.terms_version_seen`: GET /api/auth/session silently writes the
+-- currently published VITE_TERMS_VERSION here whenever it differs from what is
+-- already stored, on every signed-in session load, not just for new accounts.
+-- No banner, no email, no copy change is triggered by this column; a visible
+-- notification mechanism is a later item. Nullable: pre-existing accounts, and
+-- a brand-new account before its first post-signup session load, start with no
+-- seen version.
 alter table bilang.accounts add column if not exists terms_version_seen text;
 
 -- `accounts.updated_at` — database-maintained "last changed" time. Set by the
@@ -326,19 +305,16 @@ create trigger accounts_set_updated_at
   before update on bilang.accounts
   for each row execute function bilang.set_updated_at();
 
--- `terms_acceptances` — D15, added 2026-09-23. The timestamped, versioned
--- acceptance record Item 14 D8 requires and Item 14 §14.5 named as this
--- item's own build requirement, not a follow-up. Append-only in practice
--- (no UPDATE or DELETE anywhere in this item's build, same spirit as
--- bilang.bill_analytics above) — a record that cannot be altered after the
--- fact is the whole point: it is evidence for a dispute raised months
--- later. `terms_kind` is constrained to 'signup' only in this item's build;
--- item 11's checkout-step acceptance (the second D8 tick) will add its own
--- value (e.g. 'credits_purchase') when that item builds it — this file does
--- not pre-invent that value. `terms_version` is plain text, not a foreign
--- key: Item 14 owns the actual version string and its versioning scheme;
--- this table just records whichever string was current at the moment of
--- acceptance.
+-- `terms_acceptances`: the timestamped, versioned acceptance record. Append-only
+-- in practice (no UPDATE or DELETE anywhere in this build, same spirit as
+-- bilang.bill_analytics above): a record that cannot be altered after the fact
+-- is the whole point, since it is evidence for a dispute raised months later.
+-- `terms_kind` is constrained to 'signup' only for now; a checkout-step
+-- acceptance will add its own value (e.g. 'credits_purchase') when that is
+-- built; this file does not pre-invent that value. `terms_version` is plain
+-- text, not a foreign key: the terms feature owns the actual version string
+-- and its versioning scheme; this table just records whichever string was
+-- current at the moment of acceptance.
 --
 -- Deliberately no updated_at column: rows are insert-only and never edited,
 -- so a "last changed" time would always equal accepted_at and would suggest
@@ -356,19 +332,17 @@ create index if not exists terms_acceptances_account_id_idx
 
 alter table bilang.terms_acceptances enable row level security;
 
--- Grants — same rationale as the splits/bill_analytics grants above: a
--- custom schema gets no automatic grants, and Bilang's server (Item 10's
--- api/_lib/auth.js and api/_lib/supabase.js) uses exclusively the
--- service_role key. Scoped to exactly what this item's specified code path
--- performs (§10.3 endpoint contracts):
---   bilang.accounts           — upsert on successful OTP verification
---                                (select, insert, update). No delete
---                                anywhere in this item's build.
---   bilang.terms_acceptances  — insert only, on first-time account creation
---                                (§10.3's endpoint contract). No select,
---                                update, or delete anywhere in this item's
---                                build — this table IS append-only in
---                                practice, same as bill_analytics.
+-- Grants: same rationale as the splits/bill_analytics grants above. A custom
+-- schema gets no automatic grants, and Bilang's server (api/_lib/auth.js and
+-- api/_lib/supabase.js) uses exclusively the service_role key. Scoped to exactly
+-- what this feature's code path performs:
+--   bilang.accounts          - upsert on successful OTP verification
+--                              (select, insert, update). No delete anywhere in
+--                              this build.
+--   bilang.terms_acceptances - insert only, on first-time account creation. No
+--                              select, update, or delete anywhere in this
+--                              build; this table IS append-only in practice,
+--                              same as bill_analytics.
 grant select, insert, update on bilang.accounts to service_role;
 grant insert on bilang.terms_acceptances to service_role;
 

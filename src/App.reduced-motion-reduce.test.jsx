@@ -1,8 +1,3 @@
-// src/App.reduced-motion-reduce.test.jsx — Item 22 Step 9: OS-level
-// `prefers-reduced-motion: reduce` case. See
-// App.reduced-motion-no-preference.test.jsx (its sibling, the opposite
-// case) for the full explanation of what this pair of tests verifies and
-// how it honestly stands in for a physical OS toggle.
 //
 // Deliberately a SEPARATE FILE from the no-preference case, not two `test()`
 // blocks in one file: motion-dom's reduced-motion detection

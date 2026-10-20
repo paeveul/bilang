@@ -1,10 +1,3 @@
-// src/state/bill-reducer.js — the state/action logic behind BillContext.jsx,
-// extracted into a plain .js file (no JSX) on purpose so it can be tested
-// directly under Node's built-in test runner without a JSX transform — same
-// reason src/screens/payer-item-row.js was split out of PayerScreen.jsx in
-// Item 22 Step 6 (see that file's header comment for the precedent).
-// BillContext.jsx imports everything from here and adds only the React
-// context/provider/hooks wiring around it.
 import { centsToPercent, fromCents } from '../../js/totals.js';
 
 export const initialState = {
@@ -13,32 +6,7 @@ export const initialState = {
   receiptMimeType: null,
   parsed: null, // {items: [{id, name, category, qty, unit_price, line_total}], subtotal, service_charge, tax, grand_total}
   payers: ['Me'],
-  // Item 24 Q2 / §24.3 "Creator-side" — the host's per-bill choice, made on
-  // the roster gate (src/screens/RosterGate.jsx), only ever meaningful when
-  // payers.length > 1: 'host' (default, today's behaviour — the host ticks
-  // who has what, every item defaults to "everyone ticked") or 'payers'
-  // ("let everyone pick their own" — items default to UNASSIGNED, so
-  // there's something left to claim on /s/:id; the host may still tick some
-  // items themselves per the design spec's Decision 5, and anything ticked
-  // is locked exactly as in 'host' mode, C4). Read by ReviewScreen.jsx to
-  // skip its default-every-item-to-everyone effect and to relax canConfirm
-  // (F3) so an unassigned item never blocks Confirm in this mode.
   claimMode: 'host',
-  // itemId -> assignment, consumed directly by js/totals.js's
-  // computeTotals() (see that file's own JSDoc for the authoritative shape
-  // description). Always:
-  //   { mode: 'equal' | 'manual', equal: string[], manual: { unit: 'RM'|'%', values: {name: {text, cents}} } }
-  // `equal` doubles as the single shared "who's ticked for this item"
-  // roster for BOTH modes (§5.1.1 point 1: "switching modes discards
-  // nothing already ticked ... on the other mode" — a name ticked under
-  // Equal split arrives pre-ticked under Set amounts because they read the
-  // same array, not a copy of it). Only `computeTotals()`'s equal-split
-  // branch treats `equal` as authoritative money data; in manual mode it's
-  // purely the tick roster the manual editor renders rows for.
-  // `manual.values` only ever holds entries for currently-ticked names, and
-  // is reset to {} every time `mode` changes (§5.1.1 point 1: reverting
-  // "discards the typed values ... but keeps the tick state" — the tick
-  // state is `equal`, which a mode switch never touches).
   assignments: {},
   ownerPaymentHandle: '',
   errorMessage: '',
@@ -93,16 +61,6 @@ export function reducer(state, action) {
       });
       return { ...state, payers: state.payers.filter((p) => p !== action.name), assignments };
     }
-    // Item 24 Step 6 — roster gate name-row editing. Index-based (not
-    // name-based, unlike REMOVE_PAYER above) because a row being actively
-    // typed into may transiently be blank or match another row's current
-    // text before the host finishes — duplicate/blank checks are a
-    // Continue-time concern (roster-validation.js), not something this
-    // action itself rejects. In normal use this only ever runs while
-    // `assignments` is still empty (the gate lives on ParsingScreen, before
-    // any item exists to assign — see RosterGate.jsx's header comment), but
-    // it propagates the rename into any existing assignments too, the same
-    // way REMOVE_PAYER does, so it stays correct if ever dispatched later.
     case 'RENAME_PAYER': {
       const oldName = state.payers[action.index];
       if (oldName === undefined || oldName === action.name) return state;
@@ -125,16 +83,9 @@ export function reducer(state, action) {
       });
       return { ...state, payers, assignments };
     }
-    // Item 24 Q2 — the roster gate's "Who picks the items?" toggle.
     case 'SET_CLAIM_MODE':
       if (state.claimMode === action.mode) return state;
       return { ...state, claimMode: action.mode };
-    // Ticks/unticks a payer for an item — the single shared roster used by
-    // both Equal split and Set amounts (§5.1.1 point 1). Un-ticking also
-    // clears any manual value that name had typed for this item (§5.1.1
-    // point 7, "edge cases": "un-ticking clears that row's typed value ...
-    // immediately updates the live indicator — un-ticking is a declaration
-    // that person isn't in this item at all").
     case 'SET_ITEM_ASSIGNMENT': {
       const current = state.assignments[action.itemId] || defaultAssignment(state.payers);
       const currentEqual = Array.isArray(current) ? current : current.equal;
@@ -163,12 +114,6 @@ export function reducer(state, action) {
         assignments: { ...state.assignments, [action.itemId]: defaultAssignment(state.payers) },
       };
     }
-    // §5.1.1 point 1 — the mode switcher. Switching to 'manual' opens with
-    // blank values (point 293: fields start blank, never pre-filled with an
-    // equal-split starting value). Switching away from 'manual' discards
-    // the typed values but keeps `equal` (the tick roster) untouched — "the
-    // typed values ... belong to the mode that created them," the tick
-    // state does not.
     case 'SET_ITEM_MODE': {
       const current = state.assignments[action.itemId] || defaultAssignment(state.payers);
       const base = Array.isArray(current) ? defaultAssignment(state.payers) : current;
@@ -181,14 +126,6 @@ export function reducer(state, action) {
         },
       };
     }
-    // §5.1.1 point 2 — the RM/% toggle. Applies to every ticked row in this
-    // item's editor at once (never mixed per-row). Converts existing typed
-    // values live rather than discarding them (point 316's "Switching to %
-    // mid-entry with RM values already typed: values convert live").
-    // `action.lineTotal` is the item's RM line_total, needed to resolve
-    // percent<->cents (js/totals.js's percentToCents/centsToPercent) — the
-    // reducer stays a pure function of its arguments, so the screen passes
-    // this in rather than the reducer reaching into `state.parsed` itself.
     case 'SET_ITEM_MANUAL_UNIT': {
       const current = state.assignments[action.itemId];
       if (!current || Array.isArray(current) || current.manual.unit === action.unit) return state;
@@ -206,11 +143,6 @@ export function reducer(state, action) {
         },
       };
     }
-    // §5.1.1 point 2/7 — a manual value field's typed text. `action.cents`
-    // is the already-resolved integer-cents value (the screen computes it
-    // via toCents() or percentToCents() before dispatching, per those
-    // functions' own "canonical stored value" contract) — the reducer never
-    // parses money text itself, to keep exactly one place doing that math.
     case 'SET_ITEM_MANUAL_VALUE': {
       const current = state.assignments[action.itemId] || defaultAssignment(state.payers);
       const base = Array.isArray(current) ? defaultAssignment(state.payers) : current;
@@ -223,10 +155,6 @@ export function reducer(state, action) {
         assignments: { ...state.assignments, [action.itemId]: { ...base, manual: { ...base.manual, values } } },
       };
     }
-    // --- Item correction (§5.1, name/qty/unit_price/category/line_total,
-    // add/remove item, bill-level totals) — porting js/app.js's
-    // buildReviewItemRow()/collectReviewedItems()/bindReview() behaviour to
-    // controlled React state rather than reading the DOM at confirm-time.
     case 'UPDATE_ITEM_FIELD': {
       if (!state.parsed) return state;
       const items = state.parsed.items.map((item) =>

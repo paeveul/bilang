@@ -1,6 +1,3 @@
-// api/_lib/claim.test.mjs — pure claim decisions (Item 24 Step 4).
-// Run: node --test api/_lib/claim.test.mjs
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';

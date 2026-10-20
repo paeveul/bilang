@@ -111,22 +111,7 @@ function recomputeSplitTotals(body) {
 }
 
 /**
- * Server recomputation of a split's per-person figures inside the payer-claim
- * write (Item 21 Step 4 / R6). Called from api/_lib/supabase.js's
- * claimSplitItem, immediately before the version-guarded UPDATE, so the new
- * `assignments` and the `totals` that describe them are written in the same
- * statement — a claim and its stored totals can never disagree, because
- * neither the claim nor this recomputation is stored unless the
- * compare-and-swap actually applies.
  *
- * Reuses computeTotals() (api/_lib/totals.js) — the same module the POST
- * path and the browser preview use — and the same per_person / unclaimed
- * shaping recomputeSplitTotals() uses, per Item 21 R3 ("one module, imported
- * by both"; no second money-math implementation). Items, the roster and the
- * receipt-level figures (subtotal/service_charge/tax/grand_total) do not
- * change after a split is created — only `assignments` does — so this only
- * ever recomputes `per_person`, `unclaimed` and `unclaimed_items`, spread
- * over the split's existing `totals` (which supplies the unchanged fields).
  *
  * Unlike recomputeSplitTotals(), there is no client-submitted figure to
  * compare against on a claim (C2: the PATCH body never carries `totals`), so

@@ -1,5 +1,3 @@
-// src/App.capture.confirm.test.jsx — 2026-10-20: two-control capture screen
-// ("Take photo" / "Choose from gallery") and the plan-W18 confirm step.
 //
 // Rule under test: choosing a photo only shows a preview. /api/v1/parse is
 // called ONLY from the click handler of the single "Use this photo" control.

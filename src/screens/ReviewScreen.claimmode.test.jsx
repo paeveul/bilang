@@ -1,8 +1,3 @@
-// src/screens/ReviewScreen.claimmode.test.jsx — Item 24 Step 6, F3: in
-// claimMode 'payers', ReviewScreen must (a) never auto-assign an item to
-// everyone, and (b) let Confirm proceed with items left fully unclaimed.
-// In claimMode 'host' (the default), behaviour is unchanged from before
-// this item (every item still defaults to "everyone ticked").
 //
 // Run: node --import ./src/test/register-jsx.mjs --test src/screens/ReviewScreen.claimmode.test.jsx
 import '../test/jsdom-setup.mjs';

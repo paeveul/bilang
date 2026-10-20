@@ -1,18 +1,9 @@
-// api/_lib/supabase.test.mjs — createSplit / getSplit against a stubbed
-// Supabase client, including a database that has not had the payers/version
-// migration applied yet, and (Item 23) one that has not had the
-// merchant_name/receipt_date migration applied yet — independently of each
-// other, since either can land before the other on a real database.
-
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 
-// Two independent migration flags — Item 24's payers/version columns and
-// Item 23's merchant_name/receipt_date columns can each be present or absent
-// on a given database regardless of the other.
 let hasRosterColumns = true;
 let hasReceiptColumns = true;
 let stateRow = null;
@@ -157,11 +148,6 @@ test('migration not applied: getSplit falls back to the original columns (both m
   }
 });
 
-// Item 23 — merchant_name/receipt_date. Both new tests below exercise the
-// column set independently of payers/version, per D4's persistence spec and
-// this item's graceful-fallback requirement (real split rows exist
-// post-Item-24, so this item cannot assume its own migration landed first).
-
 test('createSplit stores merchant_name and receipt_date when provided', async () => {
   const row = await createSplit({ ...base, merchantName: 'Restoran Uncle', receiptDate: '2026-09-28' });
   assert.equal(calls[0].row.merchant_name, 'Restoran Uncle');
@@ -238,11 +224,6 @@ test('neither migration applied: createSplit cascades all the way down to the ba
   }
 });
 
-// Item 21 Step 4: claimSplitItem recomputes `totals` from the new
-// assignments (via api/_lib/recompute.js's computeClaimTotals, itself a thin
-// wrapper over api/_lib/totals.js's computeTotals — the same arithmetic the
-// POST path and the browser preview use) and writes it in the SAME update()
-// call as `assignments`, guarded by the same `version` compare-and-swap.
 const items = [{ id: 'i1', name: 'Nasi', category: 'food', qty: 1, unit_price: 10, line_total: 10 }];
 const payers = ['A', 'B'];
 const billTotals = { subtotal: 10, service_charge: 0, tax: 0, grand_total: 10 };

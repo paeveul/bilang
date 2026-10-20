@@ -1,8 +1,5 @@
 // api/_lib/claim.js
 //
-// Pure decision logic for PATCH /api/split (Item 24): given a split's current
-// assignments and one claim request, decide what should happen. No I/O, no
-// database, no HTTP - api/split.js does the reading and writing.
 //
 // Assignment shapes it understands are the ones computeTotals() understands:
 // no entry, a plain array of names, { mode: 'equal', equal: [...] } and
@@ -89,12 +86,6 @@ function decideClaim(split, claim) {
     return { outcome: 'already_claimed' };
   }
 
-  // unclaim: a person may remove only their own name, and only from a claim.
-  // Nothing to undo (dish unclaimed, or the caller's name already absent from a
-  // payer claim, e.g. a retried request) is a quiet success (Tony, 2026-09-28).
-  // The request carries only the caller's own name, so the server cannot tell
-  // a retry from an attempt at someone else's name; either way nothing changes.
-  // not_your_claim is left for a host-set dish, which no payer may un-claim.
   if (isItemUnclaimed(current, roster)) return { outcome: 'unchanged' };
   if (!isPayerClaim(current)) return { outcome: 'not_your_claim' };
   if (!equalNamesOf(current, roster).includes(caller)) return { outcome: 'unchanged' };

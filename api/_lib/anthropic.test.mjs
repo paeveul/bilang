@@ -1,11 +1,3 @@
-// api/_lib/anthropic.test.mjs — Item 17 Steps 1-2 (bilang-mvp1-implementation-plans.md
-// §17.4): RECEIPT_TOOL's schema additions (read_quality, unreadable_reason,
-// per-item needs_check), the three-tier call-configuration ladder (§17.7 Q2),
-// and the stop_reason max_tokens guard (§17.3). Mocks @anthropic-ai/sdk the
-// same way api/_lib/supabase.test.mjs mocks @supabase/supabase-js — no live
-// API call is made here. The real signal-quality question (is the model
-// actually honest) is what the 17.6 fixture harness answers against real
-// photographs, not this file.
 //
 // Run: node --test api/_lib/anthropic.test.mjs
 
@@ -86,8 +78,6 @@ beforeEach(() => {
   delete process.env.PARSE_RECEIPT_TIER;
 });
 
-// --- Schema shape (Step 1) --------------------------------------------
-
 test('RECEIPT_TOOL keeps strict: true and additionalProperties: false at both levels (S4)', () => {
   assert.equal(RECEIPT_TOOL.strict, true);
   assert.equal(RECEIPT_TOOL.input_schema.additionalProperties, false);
@@ -134,8 +124,6 @@ test('merchant_name/receipt_date (Item 23) remain optional — untouched by this
   assert.ok(!RECEIPT_TOOL.input_schema.required.includes('receipt_date'));
 });
 
-// --- Call-configuration ladder (Step 2, §17.7 Q2) ----------------------
-
 test('tier 1 (default) matches production cost today: thinking disabled, effort low, 4096 tokens', () => {
   assert.equal(DEFAULT_TIER, '1');
   const config = getCallConfig();
@@ -172,8 +160,6 @@ test('an explicit tier argument wins over PARSE_RECEIPT_TIER', () => {
 test('an unknown tier throws rather than silently falling back', () => {
   assert.throws(() => getCallConfig(4), /Unknown receipt-parse tier/);
 });
-
-// --- parseReceipt() call wiring + stop_reason guard (Step 2, §17.3) ----
 
 test('parseReceipt sends the tier config it resolves and keeps tool_choice forced (S5)', async () => {
   await parseReceipt('base64data', 'image/jpeg', 2);

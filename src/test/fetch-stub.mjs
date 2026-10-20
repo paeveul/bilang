@@ -1,7 +1,3 @@
-// src/test/fetch-stub.mjs — Item 10 Checkpoint 4: a network stub for the
-// client-side auth tests. Replaces globalThis.fetch at the network boundary,
-// so the real js/auth-client.js and js/api-client.js run unchanged on top of
-// it. Nothing here contacts Supabase, Anthropic, Resend, or any real host.
 //
 // Usage:
 //   const calls = installFetchStub((call) => {

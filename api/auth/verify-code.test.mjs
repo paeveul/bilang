@@ -1,4 +1,3 @@
-// api/auth/verify-code.test.mjs — Item 10 Checkpoint 2, Step 7.
 //
 // The real handler, with api/_lib/auth.js, api/_lib/ratelimit-otp.js and
 // api/_lib/supabase.js replaced by in-memory stubs.

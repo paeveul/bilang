@@ -1,16 +1,3 @@
-// src/hooks/usePolledSplit.js — Item 24 Step 7 (§24.3's "Payer-side"
-// paragraph, cross-referenced by design spec §7's addendum): the poll loop
-// behind PayerScreen.jsx. Owns:
-//   - the decaying poll schedule (src/hooks/poll-schedule.js, pure —
-//     unit-tested there; this file wires it to real timers/effects),
-//   - the hidden-tab pause (document.visibilitychange — stop while hidden,
-//     fetch at once and resume on return, §2.5 "on return, fetch at once
-//     and show 'Updating…' until it lands"),
-//   - the stale-version discard (C12 — a response whose version is lower
-//     than the one already shown is ignored outright),
-//   - start()/stop(), exposed so Item 21 Phase B can take the loop over
-//     later (run the poll only while the realtime socket is down) without
-//     rewriting this screen — see §24.3's own note. Not built here.
 //
 // Also exposes claim/unclaim, which call js/api-client.js's patchSplit()
 // and fold a successful, a 409-already_claimed, or a 200-unchanged response
@@ -39,11 +26,6 @@ export function usePolledSplit(id) {
   const openedAtRef = useRef(Date.now());
   const lastActivityAtRef = useRef(openedAtRef.current);
 
-  // Applies a fetched/patched row if its version is not stale. Returns
-  // whether the version actually advanced (a real change, as opposed to a
-  // no-op re-poll or a repeat-tap 200) — the caller uses this to decide
-  // whether to reset the poll schedule's fast phase (§24.3: "any claim
-  // landing on the bill resets ... to the fast phase").
   const applyRow = useCallback((data) => {
     const nextVersion = typeof data.version === 'number' ? data.version : 0;
     if (isStaleVersion(versionRef.current === -1 ? -Infinity : versionRef.current, nextVersion)) {
@@ -110,7 +92,6 @@ export function usePolledSplit(id) {
   }, [poll]);
 
   useEffect(() => {
-    // Fresh id: reset everything and fetch immediately (§2.6 "First load").
     versionRef.current = -1;
     splitRef.current = null;
     openedAtRef.current = Date.now();
@@ -126,7 +107,7 @@ export function usePolledSplit(id) {
         stop();
       } else {
         stop();
-        start(true); // "on return, fetch at once" (§2.5)
+        start(true); // "on return, fetch at once"
       }
     }
     document.addEventListener('visibilitychange', handleVisibility);
@@ -147,7 +128,7 @@ export function usePolledSplit(id) {
         return { outcome: 'applied' };
       } catch (err) {
         if (err instanceof PatchSplitError && err.body && typeof err.body.version === 'number') {
-          applyRow(err.body); // 409 already_claimed still carries the current row (§24.3)
+          applyRow(err.body); // 409 already_claimed still carries the current row
         }
         return errOutcome(err);
       }

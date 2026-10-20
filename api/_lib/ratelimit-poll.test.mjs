@@ -1,8 +1,4 @@
-// api/_lib/ratelimit-poll.test.mjs — Item 24 Step 5
 //
-// Runs entirely against a mocked global.fetch (no real Upstash instance
-// reachable from this test environment). See the Step 5 report for what
-// was additionally verified against a real Upstash instance.
 //
 // Run: node --test api/_lib/ratelimit-poll.test.mjs
 

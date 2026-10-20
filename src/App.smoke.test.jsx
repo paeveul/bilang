@@ -1,40 +1,5 @@
-// src/App.smoke.test.jsx — Item 22 Step 11: the full-path smoke test,
-// §22.4's own words: "Capture -> parse -> review -> assign -> payment
-// handle -> create -> share -> open the share link in a private window
-// with no session. Plus a real phone on a real mobile connection. Verify:
-// everything, and specifically that the share link generated before the
-// migration still opens correctly after it."
 //
-// WHAT THIS FILE DOES AND HONESTLY DOES NOT COVER: this drives the entire
-// path through the real, rendered React app (App.jsx -> every screen ->
-// BillContext's real reducer -> js/totals.js's real money math), with
-// `fetch` mocked at the network boundary to stand in for the three real
-// serverless endpoints. That proves the client-side path end to end. It
-// does NOT prove two things the doc's own verify line explicitly asks
-// for, because neither is available to an automated local test run in
-// this dispatch:
-//   1. "On a Vercel preview" — requires a deployed preview URL, which
-//      requires a git push. This dispatch is local-commit-only per Alex's
-//      explicit scope for this task; no push happened.
-//   2. "A real phone on a real mobile connection" — requires physical
-//      hardware this environment does not have.
-// Both gaps are reported as open blockers in this pass's dispatch report,
-// not silently presented as covered by this file. What IS proven here
-// still has real value: it's the strongest LOCAL equivalent available,
-// and it catches any wiring/logic break in the migrated client itself,
-// which is the thing most likely to actually break.
 //
-// "The share link generated before the migration still opens correctly
-// after it" — the strongest local equivalent available: PayerScreen.jsx
-// (unchanged behaviourally since Item 22 Step 6, per that file's own
-// header comment) is exercised here against a `getSplit()` response shaped
-// exactly like the one the OLD vanilla client's own /api/split endpoint
-// already returns (unchanged field names/shapes — Item 22 Step 3 only
-// added the /api/v1/* rewrite, it did not touch api/split.js's response
-// shape). This proves the React payer view correctly renders that
-// unchanged contract; it does not literally open a link that was created
-// by a pre-migration deployment (there isn't one available to this local
-// test run).
 import { window as jsdomWindow } from '../src/test/jsdom-setup.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -66,11 +31,6 @@ const CREATED_SPLIT = {
   url: '/s/smoketest123',
 };
 
-// Matches what api/split.js (unchanged since before Item 22 — Step 3 only
-// adds the /api/v1/* rewrite, per that step's own header comment in
-// ReviewScreen.jsx and the doc's V2 decision) actually returns for a
-// GET — items + totals.per_person + ownerPaymentHandle, the exact shape
-// PayerScreen.jsx (Step 6) reads.
 const STORED_SPLIT = {
   items: PARSED_RECEIPT.items,
   totals: {
@@ -87,8 +47,6 @@ function mockFetch() {
   const calls = [];
   globalThis.fetch = async (url, options) => {
     calls.push({ url: String(url), options });
-    // Item 10 Step 10: the creator path checks the session on load. This
-    // smoke test is the signed-in path, so the session answer is signed-in.
     if (String(url) === '/api/v1/auth/session') {
       return { ok: true, status: 200, json: async () => ({ signedIn: true, accountId: 'acct-smoke' }) };
     }
@@ -164,9 +122,6 @@ test('full creator path: landing -> capture -> parse -> review -> payment -> cre
   assert.equal(parseCalls.length, 1, 'parseReceipt() must be called exactly once');
   assert.equal(createCalls.length, 1, 'createSplit() must be called exactly once');
 
-  // The confirm-time payload actually submitted must carry the exact
-  // grand total the review screen showed — this is the money-safety
-  // property Item 21/22 exist to guarantee, re-confirmed here end to end.
   const submittedBody = JSON.parse(createCalls[0].options.body);
   assert.equal(submittedBody.totals.grand_total, PARSED_RECEIPT.grand_total);
   assert.equal(submittedBody.ownerPaymentHandle, 'DuitNow: 012-3456789 (Test Owner)');

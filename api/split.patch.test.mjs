@@ -50,10 +50,6 @@ require.cache[supabasePath] = {
     },
   },
 };
-// Item 10 Step 8: split.js now gates POST behind requireAccount. This file's
-// PATCH tests are anonymous and never touch the gate, so the auth layer is
-// stubbed as signed-in to keep the POST-validation assertion below meaningful.
-// The gate itself is covered by api/split.post.test.mjs.
 const authPath = require.resolve('./_lib/auth.js');
 require.cache[authPath] = {
   id: authPath,
@@ -296,7 +292,6 @@ test('405 for other methods; GET still works and returns roster and version', as
 });
 
 test('429 rate_limited cannot fire yet: the limiter slot is a no-op until Item 24 Step 5', async () => {
-  // Documents the placeholder. Step 5 replaces this test with 901 requests -> 429.
   for (let i = 0; i < 5; i += 1) assert.notEqual((await patch(claim('Ali'))).statusCode, 429);
 });
 

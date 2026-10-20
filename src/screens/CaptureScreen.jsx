@@ -1,20 +1,5 @@
-// src/screens/CaptureScreen.jsx — Item 22 Step 5, updated 2026-10-20 for the
-// two-control capture screen and the plan-W18 confirm step (pulled forward
-// from Item 13 by Alex). Visual spec: bilang/design/
-// capture-screen-two-controls-and-confirm-spec-v1.md.
 //
-// Two states on one screen:
-//   1. Pick   — "Take photo" (camera) and "Choose from gallery" (no capture
-//               hint), both feeding the same handler.
-//   2. Check  — preview only, with "Use this photo" and "Retake".
-// Choosing a file NEVER calls /api/parse. parseReceipt() (js/api-client.js,
-// unchanged network module — F9) is called from exactly one place: the click
-// handler of "Use this photo". Retake, Back, and leaving the screen send
-// nothing and change no credits or holds.
 //
-// Item 24 Step 6: this screen does not navigate to 'review' itself on a
-// successful parse — it only calls setParsed(). ParsingScreen.jsx owns that
-// decision (roster gate, see its header comment).
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { parseReceipt } from '../../js/api-client.js';
@@ -101,9 +86,6 @@ export default function CaptureScreen() {
 
     goToScreen('parsing');
     try {
-      // Item 10 Step 11: a session_expired reply opens the sign-in overlay and
-      // this same parse is retried after sign-in. The receipt image is only
-      // cleared in the finally below, after that retry has finished.
       const parsed = await runWithSession(() => parseReceipt(base64, mimeType));
       setParsed(parsed);
     } catch (err) {
@@ -219,8 +201,6 @@ export default function CaptureScreen() {
         >
           Choose from gallery
         </motion.button>
-        {/* Reserved 48px slot for Item 16's E3 "Bill won't scan? Type it in."
-            link. Deliberately NOT built and not rendered until Item 16. */}
       </div>
 
       <button

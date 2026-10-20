@@ -1,14 +1,4 @@
-// src/screens/LandingScreen.jsx — Item 22 Step 5 (mechanical, presentational).
-// Ported from index.html's data-screen="landing" section + js/app.js's
-// bindLanding().
 //
-// 2026-10-19 (Alex's request, relayed via the orchestrator): Landing no longer
-// has a consent tick, state or legal panels. The one and only consent tick is
-// on the sign-in screen (src/screens/AuthScreen.jsx) and covers Terms, Privacy
-// Notice and the receipt-photo disclosure; the wording now lives in
-// src/legal/mock-legal-content.js. "Start a new split" goes straight to
-// capture. The "No accounts, no app to install" bullet below is intentionally
-// untouched (a separate follow-up is being decided).
 import { useBillActions } from '../state/BillContext.jsx';
 
 export default function LandingScreen() {

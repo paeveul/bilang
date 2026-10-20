@@ -1,29 +1,11 @@
-// src/legal/mock-legal-content.js — Alex, 2026-10-10 (logged in
-// bilang/pm/bilang-pm-tracker.md v2.78 change-log): use placeholder/mock
-// Terms of Service and Privacy Notice content for now. Real legal wording
-// is deferred to just before MVP1 completion — this file must never read as
-// the real thing.
 //
-// Scope: this is the SINGLE sign-in consent (2026-10-19, Alex's request relayed
-// via the orchestrator): one tick on the sign-in screen now covers the Terms of
-// Service, the Privacy Notice (email collection, OTP, session cookies, account
-// storage) AND the receipt-photo disclosure (the photo is sent to Anthropic to
-// be read and is not stored afterwards). The Landing screen no longer has its
-// own tick or legal panels; its wording was moved here.
 //
 // PHOTO_DISCLOSURE_LINE is the sentence shown as its own visible line beside
 // the tick. It deliberately does NOT contain the placeholder marker (it is the
 // tick text, not a notice paragraph); the same disclosure is stated in full in
 // MOCK_PRIVACY_NOTICE so the tick and the Notice say the same thing.
 //
-// Same explicit-placeholder convention LandingScreen already uses: every
-// paragraph opens with "[PLACEHOLDER — Javier to draft final copy]" so this
-// can never be mistaken for the final text, however it is skimmed.
 //
-// Contact line added 2026-10-10 (Alex: "just have anything... there's not
-// much thinking needed, this is purely a mock" — relayed via coordinator,
-// bilang-pm-tracker.md v2.80 change-log). An email-shaped placeholder in the
-// same bracketed register as the rest of this file — not a real mailbox.
 
 export const PHOTO_DISCLOSURE_LINE =
   'I understand my receipt photo is sent to Anthropic (the maker of the Claude AI model) to be read, and is never stored afterwards.';

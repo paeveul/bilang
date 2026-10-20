@@ -1,38 +1,5 @@
-// src/screens/PayerScreen.jsx — Item 24 Step 7 rebuild of the /s/:id route
-// target (`bilang-item-24-roster-gate-and-claim-screens.md` §2). Replaces
-// the Item 22 Step 6 read-only build (git history has that version) with
-// the full claim UI: identity tap (§2.2), claim/un-claim/shared per item
-// (§2.3, via ClaimableItemRow.jsx), live totals (§2.4, computed client-side
-// per C9 — "Until [Item 21] Step 4, per-payer figures shown on the payer
-// screen come from the client preview", same computeTotals() ReviewScreen
-// already uses), live updates (§2.5, usePolledSplit.js), and the loading/
-// offline/error states (§2.6).
 //
-// Read-only fallback (P22, "claiming unavailable"): no roster on the split
-// (payers null — an old split, or CLAIMS_ENABLED was off at creation-time
-// glue... in practice today CLAIMS_ENABLED gates the PATCH endpoint only,
-// so a split can have a roster with claiming still off server-side; the
-// first claim attempt then comes back 409 claiming_unavailable and this
-// screen falls back the same way) renders the old simple list, unchanged
-// in spirit from the Item 22 Step 6 build. THE SECURITY FIX for item.qty
-// (payer-item-row.js) is reused there, untouched — see that file's header
-// comment and its kept test, payer-item-row.security.test.mjs.
 //
-// Item 23 (merchant name + receipt date), placement decided by Amelia
-// 2026-09-29 (functional-only, per Alex's scoping — visual redesign is a
-// later, separate pass and must never compromise functionality; see
-// bilang-pm-tracker.md §7 Change Log 2.56): both lines sit between the
-// "Pick your items" heading and whichever state block follows (identity
-// strip or roster card), rendering once regardless of state, reusing
-// existing classes (`text-sm text-slate-600` for the name, `text-xs
-// text-slate-500` for the date — NOT the h2's own `text-xl font-bold`, so
-// these two lines never read as a second heading). Same absent-value rule
-// as ReviewScreen (D6/D7): the line is simply missing when the value is
-// null, no placeholder, no layout gap (`space-y-4` on the parent section).
-// Applied to the claiming-available header below AND, for consistency
-// (Alex/Amelia did not ask about the read-only fallback specifically — a
-// judgment call, see this file's dispatch report), to the read-only
-// fallback's "Bill split" header too.
 import { useEffect, useRef, useState } from 'react';
 import { computeTotals, formatRM, fromCents } from '../../js/totals.js';
 import { usePolledSplit } from '../hooks/usePolledSplit.js';
@@ -44,9 +11,6 @@ import LiveAnnouncer from '../components/LiveAnnouncer.jsx';
 
 const CONFLICT_NOTE_MS = 4000;
 
-// Per-split-id identity memory (§2.2: "remembered in the browser for that
-// split id"), wrapped so a blocked store (private window, cleared/blocked
-// site data) changes nothing — the person is just asked again.
 function readStoredIdentity(id) {
   try {
     return window.localStorage.getItem(`bilang:identity:${id}`);
@@ -93,18 +57,11 @@ export default function PayerScreen({ id }) {
     };
   }, []);
 
-  // §2.5 "Money": every server-authoritative update (a poll landing, a
-  // claim response landing) bumps snapTick, so AnimatedMoney snaps instead
-  // of gliding (Item 22 M5's discipline, reused, not rebuilt).
   useEffect(() => {
     if (!split) return;
     setSnapTick((n) => n + 1);
   }, [split?.version]); // eslint-disable-line react-hooks/exhaustive-deps -- version is the authoritative change signal
 
-  // §2.5 "Announcement" — one polite sentence per poll (or per own action),
-  // diffing the previous assignments against the new ones. Own actions
-  // (flagged via ownActionRef, set right before calling claim()/unclaim())
-  // get their own line and are never re-announced as someone else's change.
   useEffect(() => {
     if (!split || !split.items) return;
     if (split.version === prevVersionRef.current) return;
@@ -317,9 +274,6 @@ export default function PayerScreen({ id }) {
     );
   }
 
-  // C9 / design spec §2.4: figures come from the client preview, computed
-  // the same way ReviewScreen's Running totals are — not from a server
-  // recompute-on-claim, which is Item 21 Step 4's scope, not this item's.
   const { perPerson, unclaimed } = computeTotals(split.items, split.assignments || {}, split.totals, split.payers);
   const unclaimedCount = split.items.filter(
     (item) => computeRowState(item, split.assignments?.[item.id], split.payers, me).kind === 'unclaimed'

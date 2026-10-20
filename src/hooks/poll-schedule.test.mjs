@@ -1,6 +1,3 @@
-// src/hooks/poll-schedule.test.mjs — Item 24 Step 7.
-// Run: node --test src/hooks/poll-schedule.test.mjs
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {

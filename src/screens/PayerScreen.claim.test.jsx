@@ -1,7 +1,3 @@
-// src/screens/PayerScreen.claim.test.jsx — Item 24 Step 7. Integration
-// coverage for the rebuilt PayerScreen.jsx: identity tap, claim/un-claim,
-// the 409 conflict note, the read-only fallback (no roster / claiming
-// unavailable), 404, and offline disabling the claim affordance.
 //
 // Run: node --import ./src/test/register-jsx.mjs --test src/screens/PayerScreen.claim.test.jsx
 import '../test/jsdom-setup.mjs';

@@ -1,12 +1,5 @@
-// js/auth-client.js — Item 10 Checkpoint 3, Step 9.
 //
-// Browser-side wrapper for the four auth endpoints (plans §10.3, "js/auth-client.js").
-// Mirrors js/api-client.js: the only module that calls /api/v1/auth/*.
 //
-// The browser never talks to Supabase and never sees a token (D2/D3). The
-// session lives in HttpOnly cookies that the server sets and reads, so every
-// request sends `credentials: 'same-origin'` and this module never touches
-// document.cookie, localStorage or an Authorization header.
 //
 // Error handling: every non-success response is thrown as an AuthError
 // carrying the HTTP status, the response body's `code`, and the body itself.
@@ -14,8 +7,6 @@
 // and rate-limit copy stays owned by the server. Retry-After is exposed as
 // `body.retryAfterSeconds` for callers that want it; this module displays nothing.
 //
-// Versioned surface: /api/v1/* is rewritten to /api/* by vercel.json (Item 22
-// Step 3), so these calls land on api/auth/*.js.
 
 const AUTH_BASE = '/api/v1/auth';
 
@@ -30,9 +21,6 @@ export class AuthError extends Error {
 }
 
 /**
- * True when an error from any api-client or auth-client call means the
- * session is over. Callers use this to choose the in-place re-auth path
- * (Step 11) instead of the error screen.
  *
  * @param {unknown} err
  * @returns {boolean}
@@ -61,12 +49,6 @@ async function call(path, init) {
 }
 
 /**
- * Ask the server to email a six-digit code. Resolves on the server's 204,
- * which is identical for known, unknown and rate-limited-but-valid addresses
- * (D12). Throws AuthError on 400, 429, 502 and 503 — including 400
- * terms_not_accepted (Alex, 2026-10-10): the tick now gates the SEND itself,
- * not just verification, so the server refuses before dispatch when the tick
- * fields are missing or false.
  *
  * @param {string} email
  * @param {{termsAccepted?: boolean, termsVersion?: string}} [terms]
@@ -85,9 +67,6 @@ export async function requestCode(email, terms = {}) {
 }
 
 /**
- * Verify the code. On first-time account creation the server requires the
- * terms-acceptance fields (D15); a returning user omits them. The terms
- * version is supplied by the caller and is never hardcoded here.
  *
  * @param {string} email
  * @param {string} code - exactly six digits

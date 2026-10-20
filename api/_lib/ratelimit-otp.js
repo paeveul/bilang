@@ -1,50 +1,42 @@
-// api/_lib/ratelimit-otp.js — Item 10 Checkpoint 2, Step 5.
+// api/_lib/ratelimit-otp.js
 //
-// The isolated OTP limiter (D8, plans §10.3). This module exists only for
-// the OTP surface — it does not export a generic limiter, does not accept
-// an endpoint name, and imports no configuration from any other limiter
-// module. api/_lib/ratelimit-poll.js (Item 24, rl:poll:) and R-1's future
-// scan limiter (rl:scan:, not yet built) are separate modules that happen
-// to share the same physical Upstash Redis instance — never the counters,
-// never the key prefix, never this file.
+// The isolated OTP limiter. This module exists only for the OTP surface: it
+// does not export a generic limiter, does not accept an endpoint name, and
+// imports no configuration from any other limiter module.
+// api/_lib/ratelimit-poll.js and any future scan limiter are separate modules
+// that happen to share the same physical Upstash Redis instance, but never the
+// counters, never the key prefix, never this file.
 //
 // Every key this module writes begins with `rl:otp:`. No other module may
 // write that prefix.
 //
-// Mechanism: fixed-window counters via Upstash's REST API (INCR, then
-// EXPIRE only on the first increment in a window) over plain `fetch` — no
-// new npm dependency (plans §10.6 verification #21). Same primitive
-// ratelimit-poll.js already uses.
+// Mechanism: fixed-window counters via Upstash's REST API (INCR, then EXPIRE
+// only on the first increment in a window) over plain `fetch`, with no new npm
+// dependency. Same primitive ratelimit-poll.js already uses.
 //
-// Email keys are `sha256(email.trim().toLowerCase())`, never the raw
-// address, so the rate-limit store holds no readable email addresses (D9).
+// Email keys are `sha256(email.trim().toLowerCase())`, never the raw address,
+// so the rate-limit store holds no readable email addresses.
 //
-// FAILURE MODE — the opposite of ratelimit-poll.js's fail-open: this module
-// FAILS CLOSED (D10). If the store is unreachable, every check below
-// resolves `{ outcome: 'unavailable' }` and the calling endpoint must
-// refuse the request with 503 `auth_unavailable`. Failing open on an
-// endpoint that dispatches paid transactional email is unbounded cost and,
-// worse, invites the sending domain to be reported as spam — reputational
-// damage measured in weeks, not minutes (plans §10.3).
+// FAILURE MODE, the opposite of ratelimit-poll.js's fail-open: this module
+// FAILS CLOSED. If the store is unreachable, every check below resolves
+// `{ outcome: 'unavailable' }` and the calling endpoint must refuse the request
+// with 503 `auth_unavailable`. Failing open on an endpoint that dispatches paid
+// transactional email is unbounded cost and, worse, invites the sending domain
+// to be reported as spam: reputational damage measured in weeks, not minutes.
 //
-// Alerting on a store outage is meant to run through api/_lib/ops-alert.js
-// -> OPS_ALERT_EMAIL via Resend (plans §10.3, citing Item 19 §19.3 / SJ10).
-// THAT MODULE DOES NOT EXIST YET — Item 19 has not been built. Building it
-// here would be out of this checkpoint's scope (Checkpoint 2 is Item 10
-// Steps 5-7 only). tryOpsAlert() below is written to pick it up
-// automatically, with zero changes to this file, the moment Item 19 ships
-// api/_lib/ops-alert.js exporting `sendOpsAlert(message)`. Until then, a
-// store outage still correctly fails closed (503) — only the *alert
-// dispatch* is unavailable, and that gap is logged loudly so it is never a
-// silent one. See the Checkpoint 2 handback report for this flagged as an
-// open item, not a defect.
+// Alerting on a store outage is meant to run through api/_lib/ops-alert.js ->
+// OPS_ALERT_EMAIL via Resend. That module does not exist yet; tryOpsAlert()
+// below is written to pick it up automatically, with no change to this file, as
+// soon as api/_lib/ops-alert.js exports `sendOpsAlert(message)`. Until then, a
+// store outage still correctly fails closed (503); only the alert dispatch is
+// unavailable, and that gap is logged loudly so it is never a silent one.
 
 const crypto = require('crypto');
 
 const KEY_PREFIX = 'rl:otp:';
 
 /**
- * D9 limiter table (plans §10.3):
+ * Limiter table:
  *
  *   rl:otp:send:email:<hash>       1  / 60s     impatient repeat taps
  *   rl:otp:send:email:<hash>:h     5  / 1h       sustained mailbox bombing
@@ -70,10 +62,10 @@ function hashEmail(email) {
   return crypto.createHash('sha256').update(String(email).trim().toLowerCase()).digest('hex');
 }
 
-// Same convention as ratelimit-poll.js: leftmost x-forwarded-for entry, with
-// a socket fallback. Per D9/plans §10.3: "Where a client IP genuinely cannot
-// be determined, the IP-keyed checks are skipped and the email-keyed checks
-// alone apply — an absent IP must never be treated as a shared bucket."
+// Same convention as ratelimit-poll.js: leftmost x-forwarded-for entry, with a
+// socket fallback. Where a client IP genuinely cannot be determined, the
+// IP-keyed checks are skipped and the email-keyed checks alone apply: an absent
+// IP must never be treated as a shared bucket.
 function clientIp(req) {
   const forwarded = req.headers && req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded.length > 0) {
@@ -152,11 +144,9 @@ async function tryOpsAlert(message) {
   }
 }
 
-/**
- * Run one group of fixed-window checks (all incremented unconditionally —
- * a limiter that only counts successes counts nothing, per D9/plans §10.3).
- * Returns { limited, retryAfterSeconds }.
- */
+// Run one group of fixed-window checks (all incremented unconditionally: a
+// limiter that only counts successes counts nothing). Returns
+// { limited, retryAfterSeconds }.
 async function runChecks(url, token, checks) {
   let limited = false;
   let retryAfterSeconds = 0;
@@ -236,9 +226,9 @@ async function checkRequestCode(req, email) {
 
 /**
  * Check-and-increment every verify-side counter for one `POST
- * /api/auth/verify-code` attempt. Must be called — and must count — on
- * EVERY attempt including a wrong code, per D9 ("a limiter that only counts
- * successes counts nothing").
+ * /api/auth/verify-code` attempt. Must be called, and must count, on every
+ * attempt including a wrong code ("a limiter that only counts successes counts
+ * nothing").
  *
  * @param {object} req
  * @param {string} email

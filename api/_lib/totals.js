@@ -4,11 +4,6 @@
 // (api/*) can require() it directly; js/totals.js re-exports it for the
 // browser bundle.
 //
-// Deterministic per-person total computation (roadmap A5). The
-// model only ever READS the receipt (js/api-client.js -> /api/parse) — this
-// module is the ONLY place money is actually computed anywhere in the app,
-// and it never talks to the network. Tax + service charge are apportioned
-// pro-rata by each payer's share of the assigned item subtotal.
 //
 // All arithmetic is done in integer cents to avoid floating-point drift, with
 // the largest-remainder method used to distribute leftover cents fairly
@@ -27,27 +22,10 @@ function formatRM(amount) {
   return `RM${Number(amount || 0).toFixed(2)}`;
 }
 
-/**
- * Formats a ringgit amount with a space between "RM" and the figure, e.g.
- * "RM 1.00" — used ONLY for the item 22 Step 8 correction-screen's locked
- * status/error strings (`bilang-round-2-design-spec.md` §5.1.1 points 3/4,
- * sourced verbatim from `bilang-direction-round-2-feedback.md`'s exact-copy
- * tables around lines 327-345, e.g. "RM 1.00 left to allocate"). Every other
- * money label in the app (item totals, running totals, etc.) keeps using
- * the existing no-space `formatRM()` above, unchanged — this is a distinct,
- * deliberately narrow formatter for Tony's locked copy, not a replacement.
- */
 function formatRMLocked(amount) {
   return `RM ${Number(amount || 0).toFixed(2)}`;
 }
 
-/**
- * Resolves a percentage (0-100, may be fractional) of an item's line total
- * into integer cents — the manual-override RM/% toggle's "%" mode (§5.1.1
- * point 2/7). The result is always whole cents: this is the canonical
- * *stored* value the submit-time exact-match check reads, independent of
- * whatever's displayed on screen while a %-mode field is being typed.
- */
 function percentToCents(percent, lineTotalRM) {
   const lineCents = toCents(lineTotalRM);
   const pct = Number(percent);
@@ -55,14 +33,6 @@ function percentToCents(percent, lineTotalRM) {
   return Math.round((pct / 100) * lineCents);
 }
 
-/**
- * Inverse of percentToCents, for DISPLAY only — converting a stored cents
- * value back into a percentage string when the RM/% toggle switches to "%"
- * (§5.1.1 point 7: "rounded to one decimal place for display"). Never used
- * for the submit-time check itself; cents stay canonical there always, so a
- * display-rounding artefact here can never itself cause a false block or a
- * false pass (§5.1.1 point 7's own explicit guarantee).
- */
 function centsToPercent(cents, lineTotalRM) {
   const lineCents = toCents(lineTotalRM);
   if (lineCents === 0) return 0;
@@ -107,9 +77,9 @@ const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key
  * @param {Object<string, string[]|{mode:'equal',equal:string[]}|{mode:'manual',amounts:Object<string,number>}>} assignments
  *   itemId -> either a plain array of payer names (equal split — the
  *   original, unchanged shape), an explicit `{mode:'equal', equal:[...]}`
- *   wrapper (same meaning, used by Item 22 Step 8's mode-tracking UI), or
+ *   wrapper (same meaning, used by the review screen's mode tracking), or
  *   `{mode:'manual', amounts:{payerName: cents}}` for a per-person manual
- *   override (§5.1.1) — `amounts` values are already-resolved integer
+ *   override — `amounts` values are already-resolved integer
  *   cents, never RM or a percentage; the screen resolves RM/% input to
  *   cents (via toCents/percentToCents) before it ever reaches here.
  * @param {BillTotals} billTotals
@@ -139,13 +109,6 @@ function computeTotals(items, assignments, billTotals, payers) {
     const assignment = hasOwn(assignments, item.id) ? assignments[item.id] : undefined;
     const lineCents = toCents(item.line_total);
 
-    // Manual per-person override (§5.1.1): the assignment already carries
-    // explicit resolved cent amounts per person for this item, instead of
-    // an equal-split roster. Recognised only by the exact
-    // { mode: 'manual', amounts } shape — a plain array, or the
-    // { mode: 'equal', equal: [...] } wrapper, both fall through to the
-    // equal-split branch below, which is byte-for-byte the same code that
-    // ran before this mode existed.
     if (assignment && !Array.isArray(assignment) && assignment.mode === 'manual') {
       const amounts = manualAmountsOf(assignment);
       let itemSumCents = 0;
@@ -270,21 +233,6 @@ function computeTotals(items, assignments, billTotals, payers) {
   };
 }
 
-/**
- * For a single item's current assignment, how many cents are still
- * unallocated (positive) or over-allocated (negative) — what §5.1.1's live
- * "remaining to allocate" indicator and submit-time block both key off.
- * Equal-split items are always exactly resolved the moment at least one
- * person is ticked (the largest-remainder method guarantees this by
- * construction, above) — only a manual-mode item can carry a nonzero
- * remainder, so this returns 0 for every other assignment shape.
- *
- * `assignment.manual.values` is `{ [payerName]: { cents } }` — the shape
- * `src/state/BillContext.jsx`'s reducer maintains for the in-progress
- * editor UI (it also tracks display `text` per the active RM/% unit, which
- * this function ignores — only `cents`, the canonical stored value, ever
- * feeds this calculation, per §5.1.1 point 7).
- */
 function manualItemRemainingCents(item, assignment) {
   if (!assignment || assignment.mode !== 'manual') return 0;
   const lineCents = toCents(item.line_total);

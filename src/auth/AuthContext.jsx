@@ -1,21 +1,6 @@
-// src/auth/AuthContext.jsx — Item 10 Checkpoint 4, Steps 10-11.
 //
-// Owns the creator-side session state. Only the creator path ('app' route)
-// mounts this provider. The payer route (/s/<id>) never does, so it gains no
-// auth check (§10.3: "the payer path must not gain an auth check").
 //
-// Step 10 (§10.3, "On load"): on mount, call getSession() and show the sign-in
-// screen or the landing screen accordingly. A failed getSession() is NOT
-// treated as signed out with no comment. The sign-in screen is shown with the
-// server's own message. An outage therefore blocks every sign-in attempt, and
-// the sign-in call itself returns the same 503.
 //
-// Step 11 (§10.3, "Mid-flow expiry"): runWithSession(request) runs a creator
-// request. If it fails with session_expired, the sign-in overlay opens above
-// the current screen and the SAME request is retried once the user signs in.
-// Nothing here resets state or shows the error screen, and the caller's
-// in-memory state (corrections, typed payment details, the receipt image) is
-// left alone because this module never touches it.
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { getSession, isSessionExpired } from '../../js/auth-client.js';
 import { serverMessage } from './auth-flow.js';

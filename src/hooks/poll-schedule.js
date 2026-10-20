@@ -1,8 +1,3 @@
-// src/hooks/poll-schedule.js — Item 24, the decaying poll schedule decided
-// 2026-09-29 (Jenny + Howard, approved by Alex; bilang-mvp1-implementation-
-// plans.md §24.3's usePolledSplit paragraph, cross-referenced by the design
-// spec's §7 addendum as "not a design change" — nothing a payer sees or
-// does changes, only how often the client refreshes in the background).
 //
 // Pulled out of usePolledSplit.js as a pure, dependency-free module (same
 // reason js/totals.js's arithmetic and review-validation.js's rules are
@@ -23,8 +18,6 @@ export const SLOW_INTERVAL_MS = 12000;
 export const FAST_WINDOW_MS = 3 * 60 * 1000;
 export const MEDIUM_WINDOW_MS = 10 * 60 * 1000;
 
-// +/-15% jitter, matching Item 24 C12's "poll every 1.5-2s (jittered)" —
-// applied uniformly across all three phases, not just the fast one.
 export const JITTER_RATIO = 0.15;
 
 /**
@@ -53,12 +46,6 @@ export function jitter(baseMs, random = Math.random) {
   return baseMs - delta + random() * delta * 2;
 }
 
-/**
- * Item 24 C12 — out-of-order protection: a response carrying a version
- * lower than the one already shown must be ignored outright. Equal versions
- * are not stale (a repeat/no-op response, e.g. a retried claim, still needs
- * to land so failCount resets etc.) — only strictly lower is discarded.
- */
 export function isStaleVersion(shownVersion, incomingVersion) {
   return incomingVersion < shownVersion;
 }

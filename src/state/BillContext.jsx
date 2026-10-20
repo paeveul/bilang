@@ -1,22 +1,5 @@
-// src/state/BillContext.jsx — Item 22 Steps 5-7: shared creator-flow state.
 //
-// Mirrors js/app.js's module-level `state` object (Step 2's App.jsx did not
-// need this yet since every screen was a stub). One useReducer + context,
-// not a data-fetching library (F9) — this holds client-only UI/session
-// state, not server data; the only server calls remain parseReceipt(),
-// createSplit(), getSplit() from js/api-client.js, called directly from
-// the screen that needs them, per the unchanged js/*-client.js convention.
 //
-// Screen names and their meaning are unchanged from index.html's existing
-// data-screen values: landing, capture, parsing, review, assign, payment,
-// creating, share, error, payer. 'review' is now Item 22 Step 8's combined
-// correction + assignment screen (src/screens/ReviewScreen.jsx) — see that
-// file's header comment. 'assign' is retired: its Step 7 tick-list logic
-// was absorbed into ReviewScreen.jsx per Alex's 2026-09-22 scope decision
-// (bilang-mvp1-implementation-plans.md §22.7 Q1 resolution addendum,
-// bilang-pm-tracker.md's Step 8 row) — the state machine no longer visits
-// 'assign' as its own screen, though the name is left in SCREEN_NAMES'
-// historical comment trail in App.jsx rather than silently erased.
 //
 // The actual reducer/state/action-shape logic lives in ./bill-reducer.js —
 // a plain .js file with no JSX in it, split out specifically so it's

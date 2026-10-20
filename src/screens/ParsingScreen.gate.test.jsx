@@ -1,8 +1,3 @@
-// src/screens/ParsingScreen.gate.test.jsx — Item 24 Step 6 Verify criteria:
-// pax 1 shows only the optional stepper (no name rows, no toggle) and
-// Review opens automatically when untouched; a touched gate never
-// auto-advances and blocks Continue on an incomplete roster; a valid
-// multi-person roster reaches Review with those names stored.
 //
 // Run: node --import ./src/test/register-jsx.mjs --test src/screens/ParsingScreen.gate.test.jsx
 import '../test/jsdom-setup.mjs';

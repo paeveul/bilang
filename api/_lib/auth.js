@@ -1,31 +1,27 @@
-// api/_lib/auth.js — Item 10 Checkpoint 2, Step 6.
+// api/_lib/auth.js
 //
-// The auth boundary (plans §10.3, "api/_lib/auth.js — the auth boundary").
-// This is the ONLY file in the codebase that imports @supabase/supabase-js
-// for authentication — mirroring the isolation api/_lib/supabase.js already
-// provides for data (plans §10.6 verification #22). Handlers never read
-// cookies, never touch tokens, and never call Supabase Auth directly; if a
-// handler needs to know who is calling, it calls requireAccount().
+// The auth boundary. This is the only file in the codebase that imports
+// @supabase/supabase-js for authentication, mirroring the isolation
+// api/_lib/supabase.js provides for data. Handlers never read cookies, never
+// touch tokens, and never call Supabase Auth directly; if a handler needs to
+// know who is calling, it calls requireAccount().
 //
-// D2/D3: the browser never talks to Supabase directly and never sees a
-// token. sendOtp/verifyOtp/refreshSession run against Supabase's Auth REST
-// API using the ANON key (SUPABASE_ANON_KEY) — "auth calls do not run under
-// the service role" (plans §10.3 env-var table). Session identity is
-// verified LOCALLY (readSession) against the project's published asymmetric
-// JWT signing keys (JWKS) with no network round trip per gated request —
-// only sendOtp/verifyOtp/refreshSession are genuine network calls, because
-// those operations are inherently server round trips (dispatching an email;
-// rotating a refresh token). The JWKS document itself IS fetched over the
-// network, but only rarely and cached in memory (JWKS_CACHE_TTL_MS below) —
-// this is the standard "local JWT verification" pattern and is what plans
-// §10.2 means by "no network call, no added latency" on the hot path.
+// The browser never talks to Supabase directly and never sees a token.
+// sendOtp/verifyOtp/refreshSession run against Supabase's Auth REST API using
+// the anon key (SUPABASE_ANON_KEY); auth calls do not run under the service
+// role. Session identity is verified locally (readSession) against the
+// project's published asymmetric JWT signing keys (JWKS), with no network round
+// trip per gated request. Only sendOtp/verifyOtp/refreshSession are genuine
+// network calls, because those operations are inherently server round trips
+// (dispatching an email; rotating a refresh token). The JWKS document itself is
+// fetched over the network, but rarely, and cached in memory
+// (JWKS_CACHE_TTL_MS below).
 //
-// Verifying locally with no new npm dependency (plans §10.6 verification
-// #21) uses Node's built-in `crypto` module: JWK -> KeyObject via
-// crypto.createPublicKey({ format: 'jwk' }) (Node >=15.12), and ECDSA
-// signature verification via crypto.verify() with `dsaEncoding:
-// 'ieee-p1363'`, which accepts a JOSE-style raw r||s signature directly —
-// no manual ASN.1/DER conversion needed.
+// Verification uses Node's built-in `crypto` module, so no new npm dependency
+// is needed: JWK -> KeyObject via crypto.createPublicKey({ format: 'jwk' })
+// (Node >=15.12), and ECDSA signature verification via crypto.verify() with
+// `dsaEncoding: 'ieee-p1363'`, which accepts a JOSE-style raw r||s signature
+// directly (no manual ASN.1/DER conversion).
 
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
@@ -35,19 +31,19 @@ const COOKIE_AT = 'bilang_at';
 const COOKIE_RT = 'bilang_rt';
 const COOKIE_SA = 'bilang_sa';
 
-const MAX_AGE_AT = 3600; // 1 hour (D4)
-const MAX_AGE_RT = 2592000; // 30 days (D5)
-const MAX_AGE_SA = 7776000; // 90 days (D6)
+const MAX_AGE_AT = 3600; // 1 hour
+const MAX_AGE_RT = 2592000; // 30 days
+const MAX_AGE_SA = 7776000; // 90 days
 
 // ---- Supabase clients -----------------------------------------------------
 //
 // Two separate clients, deliberately: the anon-key client performs the
-// user-facing auth operations (OTP send/verify, refresh) exactly as a
-// browser client would, per D2. The service-role client is used ONLY for
-// the admin-scope operation DELETE /api/auth/session needs (revoking a
-// session server-side) — GoTrue's admin API requires the service role,
-// there is no anon-key equivalent, and this is the one narrow, necessary
-// exception to "auth calls do not run under the service role."
+// user-facing auth operations (OTP send/verify, refresh) exactly as a browser
+// client would. The service-role client is used only for the admin-scope
+// operation DELETE /api/auth/session needs (revoking a session server-side):
+// GoTrue's admin API requires the service role and has no anon-key equivalent,
+// so this is the one narrow, necessary exception to "auth calls do not run
+// under the service role."
 
 let anonClient = null;
 function getAnonAuthClient() {
@@ -144,22 +140,18 @@ async function getPublicKey(kid) {
   return keyObject;
 }
 
-/**
- * Verify a Supabase access token locally. Returns the decoded payload on a
- * genuinely valid, current, correctly-signed token; returns null for
- * anything else — expired, tampered, malformed, wrong algorithm, unknown
- * key id, or missing required claims. Callers do not need to distinguish
- * WHY a token failed (readSession's contract collapses all of these into
- * the same needsRefresh path — see D7/plans §10.3).
- */
+// Verify a Supabase access token locally. Returns the decoded payload on a
+// genuinely valid, current, correctly-signed token; returns null for anything
+// else: expired, tampered, malformed, wrong algorithm, unknown key id, or
+// missing required claims. Callers do not need to distinguish why a token
+// failed (readSession collapses all of these into the same needsRefresh path).
 async function verifyAccessToken(token) {
   const decoded = decodeJwtParts(token);
   if (!decoded) return null;
   const { header, payload, signingInput, signature } = decoded;
 
-  // This project issues ES256 only (Step 1's asymmetric-signing-key
-  // prerequisite). Refusing any other alg closes the classic "alg
-  // confusion" JWT attack outright rather than trusting the token's own
+  // This project issues ES256 only. Refusing any other alg closes the classic
+  // "alg confusion" JWT attack outright rather than trusting the token's own
   // header to say what to check it with.
   if (header.alg !== 'ES256') return null;
   if (typeof header.kid !== 'string' || header.kid.length === 0) return null;
@@ -206,15 +198,12 @@ function appendSetCookie(res, cookieString) {
 
 /**
  * Write all three session cookies for a brand-new sign-in. A fresh session
- * anchor (bilang_sa) is generated here — this is the ONE place it is ever
- * created; refreshSession() below must never touch it (D6: "set once at
- * sign-in, never re-issued").
+ * anchor (bilang_sa) is generated here; this is the only place it is ever
+ * created. refreshSession() below must never touch it: it is set once at
+ * sign-in and never re-issued.
  *
- * Not in plans §10.3's auth.js export table verbatim, but required by it:
- * "generate the session anchor; set all three cookies" is listed as part of
- * POST /api/auth/verify-code's own contract. It is implemented here, not in
- * the endpoint handler, so that no handler ever touches a token directly —
- * consistent with this file being the sole token-handling surface.
+ * This lives here rather than in the endpoint handler so that no handler ever
+ * touches a token directly; this file is the sole token-handling surface.
  *
  * @param {object} res
  * @param {{access_token: string, refresh_token: string}} session
@@ -237,11 +226,9 @@ function clearSessionCookies(res) {
 
 // ---- Public auth operations -------------------------------------------------
 
-/**
- * Send a one-time code to `email`. `shouldCreateUser: true` — there is no
- * separate sign-up flow; first-time sign-in completes in one round trip
- * (plans §10.3). Resolves on success, throws on upstream failure.
- */
+// Send a one-time code to `email`. `shouldCreateUser: true` means there is no
+// separate sign-up flow: first-time sign-in completes in one round trip.
+// Resolves on success, throws on upstream failure.
 async function sendOtp(email) {
   const client = getAnonAuthClient();
   const { error } = await client.auth.signInWithOtp({
@@ -261,12 +248,9 @@ function tagAuthError(error, authKind) {
   return tagged;
 }
 
-/**
- * Verify a 6-digit code. Returns the Supabase session object on success
- * ({ access_token, refresh_token, user: { id, ... }, ... }), or null on an
- * invalid/expired code. Throws only on a transport-level failure (D per
- * plans §10.3's auth.js export table).
- */
+// Verify a 6-digit code. Returns the Supabase session object on success
+// ({ access_token, refresh_token, user: { id, ... }, ... }), or null on an
+// invalid/expired code. Throws only on a transport-level failure.
 async function verifyOtp(email, code) {
   const client = getAnonAuthClient();
   const { data, error } = await client.auth.verifyOtp({ email, token: code, type: 'email' });
@@ -292,9 +276,9 @@ async function verifyOtp(email, code) {
 }
 
 /**
- * Read `bilang_at` (or, per D14, an `Authorization: Bearer <token>` header
- * when no cookie is present — the cookie takes precedence when both exist)
- * and verify it LOCALLY. Never performs a refresh itself.
+ * Read `bilang_at` (or, when no cookie is present, an
+ * `Authorization: Bearer <token>` header; the cookie takes precedence when both
+ * exist) and verify it locally. Never performs a refresh itself.
  *
  * @param {object} req
  * @returns {Promise<{accountId: string, needsRefresh: false} | {needsRefresh: true}>}
@@ -316,11 +300,11 @@ async function readSession(req) {
 }
 
 /**
- * Exchange the refresh token for a new session. Requires `bilang_sa`
- * (presence only, per D6 — its value is never checked, only that it has not
- * expired/been cleared) AND `bilang_rt` to be present. Re-issues
- * `bilang_at`/`bilang_rt`; leaves `bilang_sa` completely untouched, which is
- * what makes the 90-day absolute cap non-extending.
+ * Exchange the refresh token for a new session. Requires `bilang_sa` (presence
+ * only: its value is never checked, only that it has not expired or been
+ * cleared) and `bilang_rt` to be present. Re-issues `bilang_at`/`bilang_rt`;
+ * leaves `bilang_sa` completely untouched, which is what makes the 90-day
+ * absolute cap non-extending.
  *
  * @param {object} req
  * @param {object} res
@@ -344,7 +328,7 @@ async function refreshSession(req, res) {
   const { session } = data;
   appendSetCookie(res, serializeCookie(COOKIE_AT, session.access_token, MAX_AGE_AT));
   appendSetCookie(res, serializeCookie(COOKIE_RT, session.refresh_token, MAX_AGE_RT));
-  // bilang_sa is deliberately NOT re-issued here (D6).
+  // bilang_sa is deliberately NOT re-issued here: the 90-day cap must not extend.
 
   return session.user ? session.user.id : null;
 }
@@ -376,13 +360,11 @@ async function requireAccount(req, res) {
  * Best-effort upstream revoke for DELETE /api/auth/session. Uses the
  * service-role admin API to revoke the session tied to the caller's current
  * access token, if one is present. Failure here must never block a local
- * sign-out (plans §10.3: "Clears cookies even if the upstream revoke
- * fails") — this function swallows its own errors and never throws.
+ * sign-out (cookies are cleared even if the upstream revoke fails), so this
+ * function swallows its own errors and never throws.
  *
- * Not in plans §10.3's auth.js export table (which predates D14's admin
- * revoke detail); added because DELETE /api/auth/session's own contract
- * requires it and no other module may touch tokens per this file's
- * isolation rule.
+ * It lives here because no other module may touch tokens; this file is the
+ * sole token-handling surface.
  *
  * @param {object} req
  */

@@ -1,12 +1,3 @@
-// src/screens/ShareScreen.jsx — Item 22 Step 5 (mechanical, presentational).
-// Ported from index.html's data-screen="share" + js/app.js's
-// renderShareScreen()/bindShare(). Uses the same vendored MIT QR encoder
-// (js/vendor/qrcode.js, Kazuhiko Arase) via its global `window.qrcode`
-// factory — not re-implemented, not swapped for an npm package (F2/B1:
-// no new runtime dependency for something already solved and already
-// small). The vendor script must be loaded as a classic <script> before
-// this component mounts, same as index.html does today; react-shell.dev.html
-// gained the same <script> tag in this pass so local dev/preview matches.
 import { useEffect, useRef, useState } from 'react';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
 

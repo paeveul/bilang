@@ -1,105 +1,8 @@
-// src/screens/ReviewScreen.jsx — Item 22 Step 8: the correction screen.
 //
-// Round 2 design spec §5.1/§5.1.1 (`bilang-round-2-design-spec.md`),
-// approved in full by Alex 2026-09-22 (bilang-mvp1-implementation-plans.md
-// §22.7 Q1 resolution) with an explicit scope decision the same day: this
-// screen combines item-level correction (name/qty/price/category/add/
-// remove — ported from js/app.js's renderReviewScreen()/bindReview()) AND
-// payer assignment (who shares what) in ONE screen, matching §5.1's own
-// framing ("matching the live product's actual flow"). It supersedes
-// src/screens/AssignScreen.jsx (Step 7) — that screen's tick-list logic is
-// absorbed below rather than kept as a second, separate screen; see
-// App.jsx and BillContext.jsx's header comments for the retirement of the
-// standalone 'assign' screen state.
 //
-// §5.1.1's manual per-person override mode ("Set amounts") is the newest,
-// highest-care piece: an RM/% toggle, a live remaining-to-allocate
-// indicator, and a hard submit-time block with Tony's exact locked copy
-// (bilang-direction-round-2-feedback.md's E/F tables). All of the actual
-// money math behind it — resolving RM/% input to cents, summing manual
-// allocations, computing what's left — lives in js/totals.js (computeTotals,
-// percentToCents, centsToPercent, manualItemRemainingCents), per that
-// file's own "ONLY place money is actually computed" header. This
-// component only reads those results and dispatches the already-resolved
-// numbers into BillContext's reducer (src/state/bill-reducer.js) — it does
-// not do its own parallel money arithmetic anywhere.
 //
-// Radix retrofit (this pass): F7 (bilang-mvp1-implementation-plans.md
-// §22.1) names Radix UI for this screen's accordion, segmented control and
-// focus management, and Item 22's own Step 8 line says "with Radix
-// primitives" — the first build of this screen shipped without it (a
-// flagged, reported deviation, not a silent substitution; see that Step
-// 8's status note and the pm-tracker's Change Log). Alex's instruction
-// this pass: adopt it now, retroactively, for consistency with what was
-// always meant to be built. Three primitives, matching F7 exactly:
-//   - `@radix-ui/react-accordion` — the item-row expand/collapse, replacing
-//     the hand-rolled `expandedIds` Set<string> + manual aria-expanded.
-//     Still controlled (the block-on-collapse behaviour below requires
-//     intercepting a close before it commits), just controlled through
-//     Radix's `value`/`onValueChange` contract instead of a bespoke one.
-//   - `@radix-ui/react-toggle-group` (`type="single"`) — both segmented
-//     controls (Equal split / Set amounts, and RM / %). This is a genuine,
-//     if minor, a11y upgrade over the original: a two-option exclusive
-//     switch is semantically a radio group, and ToggleGroup renders
-//     `role="radio"`/`aria-checked` with Radix's roving-tabindex keyboard
-//     navigation (arrow keys move focus between the two options) rather
-//     than the original's `aria-pressed` button pair, which had no
-//     keyboard relationship between the two buttons at all.
-//   - Real focus-stealing on block, replacing the aria-live-only
-//     simplification the first build flagged (§5.1.1 point 4's
-//     focus-management reference). Radix has no single "move focus to
-//     element X" component of its own — FocusScope/RovingFocusGroup exist
-//     to *trap or route* focus within a mounted region, not to redirect it
-//     to an arbitrary field on a validation failure — so this uses the
-//     same primitive Radix's own internals use for exactly this situation
-//     (Dialog's initial-focus behaviour is a plain ref + imperative
-//     `.focus()` under the hood too): a ref registered on each manual-value
-//     input, and a synchronous `.focus()` call at the point the block is
-//     raised. See `focusFirstUnresolvedInput` below.
 //
-// Known, deliberate simplifications still open against the full Round 2
-// spec (flagged here rather than silently built as if complete — see this
-// pass's own dispatch report for the full list and reasoning):
-//   - Visual system: this screen uses the same plain Tailwind utility
-//     styling every other Steps 5-7 screen already uses (slate/amber),
-//     NOT the two-direction Ledger/Statement token system §4/§6 of the
-//     design spec describes — no other screen in this app has that system
-//     wired in yet either, so this isn't a Step-8-specific corner cut.
-//   - Merchant name / receipt date (§5.1 point 1's header) — Item 23
-//     (bilang-mvp1-implementation-plans.md#item-23) built this pass: a
-//     prominent heading above "Check the items" plus a caption date, read
-//     from `parsed.merchant_name`/`parsed.receipt_date` and read-only per
-//     D5/D6 (omitted entirely, not a placeholder, when either is null).
-//   - "Enter manually" recovery action (§5.1 point 7) is rendered but
-//     inert — item 16 (manual-entry fallback) is not built yet.
-//   - Row-level arithmetic validation (qty × unit_price vs line_total,
-//     locked string I8) is not implemented — matching js/app.js's current
-//     live behaviour, where these three fields are independently editable
-//     with no cross-check. §5.1.1 point 4's block is fully implemented;
-//     I8 is a separate, not-yet-built correction-row feature.
 //
-// motion.dev (this pass — Item 22 Step 9, §22.3's placements table):
-//   - "Review -> assignment transition" (layout animation): each
-//     Accordion.Item is a `motion.div layout` (via Radix's `asChild`) —
-//     when a row's own height changes, or another row's does, the
-//     surrounding rows reflow smoothly instead of jumping. This is the
-//     placement §22.3 names for this exact screen, now that assignment
-//     lives inside it (Step 8's Decision B).
-//   - "Totals recalculating" (motion values, spring): every derived money
-//     figure that changes live as the user ticks/edits — the per-item
-//     manual "remaining to allocate" indicator and the running per-person
-//     totals — renders through `<AnimatedMoney>`
-//     (src/components/AnimatedMoney.jsx). Per §22.3's explicit safety
-//     requirement, those figures animate while being edited but must snap
-//     instantly on blur and on confirm — `moneySnapTick` below is bumped at
-//     exactly those two moments and threaded through as `snapTick`.
-//   - "Steppers, confirm buttons, tick-lists" (`whileTap`, kept under
-//     ~150ms per §22.3): the Confirm button, "+ Add missing item", every
-//     Radix Accordion.Trigger and ToggleGroup.Item (via `asChild`), and
-//     each payer tick-row.
-//   - `prefers-reduced-motion` is handled once, globally, by App.jsx's
-//     `<MotionConfig reducedMotion="user">` — nothing screen-specific
-//     needed here.
 import { useEffect, useRef, useState } from 'react';
 import * as Accordion from '@radix-ui/react-accordion';
 import * as ToggleGroup from '@radix-ui/react-toggle-group';
@@ -117,8 +20,6 @@ import {
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
 import { validateItems } from './review-validation.js';
 
-// Kept well under §22.3's ~150ms ceiling for `whileTap` feedback, so a tap
-// never reads as a delayed response.
 const TAP_TRANSITION = { duration: 0.1 };
 const TAP_SCALE = { scale: 0.97 };
 
@@ -138,12 +39,6 @@ function tickedOf(assignment) {
   return Array.isArray(assignment) ? assignment : assignment.equal || [];
 }
 
-// §5.1 point 4's collapsed-row assignment summary text — "Split 5 ways" /
-// "Assigned: Farah, Wei Jie +3" / "No one assigned yet", plus §5.1.1's live
-// remaining-to-allocate text while a manual item is still unresolved.
-// Item 24 §1.4: in claimMode 'payers' ("let everyone pick their own"), an
-// untouched item reads "Not yet claimed" instead — it isn't a mistake to
-// fix, it's the point of that mode.
 function assignmentSummaryText(item, assignment, payerCount, claimMode) {
   const ticked = tickedOf(assignment);
   if (ticked.length === 0) return claimMode === 'payers' ? 'Not yet claimed' : 'No one assigned yet';
@@ -187,21 +82,8 @@ export default function ReviewScreen() {
   const [expandedIds, setExpandedIds] = useState(() => new Set());
   const [blockedIds, setBlockedIds] = useState(() => new Set());
   const [validationError, setValidationError] = useState('');
-  // motion.dev "Totals recalculating" placement (§22.3) — every
-  // AnimatedMoney figure on this screen snaps instantly, instead of
-  // animating, whenever this counter changes. Bumped on blur of a manual
-  // amount field and at the top of handleConfirm — see those call sites.
   const [moneySnapTick, setMoneySnapTick] = useState(0);
 
-  // Refs to every currently-mounted manual-value <input>, keyed by
-  // `itemId -> payerName -> element`. Populated by each input's own `ref`
-  // callback during render (registerManualInputRef, below) and read only at
-  // the moment a block is raised, to move focus to the first ticked payer's
-  // amount field for that item — see this file's header comment on why
-  // this is a plain ref map rather than a Radix component: Radix's
-  // FocusScope/RovingFocusGroup trap or route focus within a mounted
-  // region, they don't redirect it to an arbitrary field on demand, which
-  // is exactly what §5.1.1 point 4 needs here.
   const manualInputRefs = useRef({});
 
   // Item-field validation (mirrors the server's item rules — see
@@ -251,14 +133,6 @@ export default function ReviewScreen() {
     }
   }
 
-  // Default every item to "everyone ticked, equal split" the first time
-  // it's seen — same rule AssignScreen.jsx (Step 7) used, now applied here
-  // since this screen is where items first arrive with an assignment at all.
-  // Item 24 §24.3 "Creator-side": skipped entirely in claimMode 'payers' —
-  // items must be leavable unassigned there so payers have something to
-  // claim on /s/:id. The host can still tick individual payers onto an item
-  // in this mode (design spec Decision 5); doing so is what locks it
-  // (C4), exactly as in 'host' mode.
   useEffect(() => {
     if (claimMode !== 'host') return;
     items.forEach((item) => ensureItemDefaultAssignment(item.id));
@@ -275,12 +149,6 @@ export default function ReviewScreen() {
 
   const { perPerson } = computeTotals(items, assignments, parsed, payers);
 
-  // Item 24 F3: in claimMode 'payers', a fully-unclaimed item (nobody
-  // ticked at all) is the mode working as intended, not a problem to block
-  // on — it's left for /s/:id to claim. A manual-mode item the host
-  // DID start allocating still has to be finished or reverted, in both
-  // modes: a half-entered "Set amounts" split is never a valid state to
-  // hand off to a payer link.
   const unresolvedCount = items.filter((item) => {
     const assignment = assignments[item.id];
     if (claimMode === 'payers' && tickedOf(assignment).length === 0) return false;
@@ -293,9 +161,6 @@ export default function ReviewScreen() {
   const problemsById = new Map(itemProblems.map((p) => [p.itemId, p.problems]));
   const canConfirm = items.length > 0 && unresolvedCount === 0;
 
-  // §5.1 point 3 — arithmetic-mismatch notice. Compares the items as
-  // currently corrected against the receipt's own stated subtotal field,
-  // same >=2-cent tolerance js/totals.js's reconciliation check uses.
   const itemSumCents = items.reduce((sum, item) => sum + toCents(item.line_total), 0);
   const statedSubtotalCents = toCents(parsed.subtotal);
   const mismatchCents = itemSumCents - statedSubtotalCents;
@@ -318,11 +183,6 @@ export default function ReviewScreen() {
       const item = items.find((i) => i.id === closingId);
       const assignment = assignments[closingId];
       if (item && !isItemResolved(item, assignment) && assignment?.mode === 'manual') {
-        // §5.1.1 point 4 — block on collapse while unresolved, rather than
-        // silently letting the row close with an unfinished split. Real
-        // focus-stealing to the first unresolved field, per this file's
-        // header comment (replaces the first build's aria-live-only
-        // simplification).
         setBlockedIds((prev) => new Set(prev).add(closingId));
         focusFirstUnresolvedInput(closingId);
         return;
@@ -359,16 +219,10 @@ export default function ReviewScreen() {
   }
 
   function handleManualValueBlur() {
-    // §22.3: a money figure must snap to its exact value on blur, never be
-    // seen still gliding after the user has moved on from the field that
-    // was driving it.
     setMoneySnapTick((n) => n + 1);
   }
 
   function handleConfirm() {
-    // §22.3: same guarantee at the moment of confirmation — whatever is
-    // submitted must be the exact figure on screen, not a value still
-    // mid-animation, regardless of which branch below actually navigates.
     setMoneySnapTick((n) => n + 1);
     if (items.length === 0) {
       setValidationError('Every item needs a name, and there must be at least one item.');
@@ -400,11 +254,6 @@ export default function ReviewScreen() {
 
   return (
     <section data-screen="review" className="app-screen py-8 space-y-4">
-      {/* §5.1 point 1 — pinned header. Item 23: merchant name/receipt date,
-          read-only (D5), each line simply absent when null (D6) — not a
-          placeholder. Rendered above the existing "Check the items" title,
-          which is downgraded to h3 so the merchant name (now the screen's
-          most prominent heading, per D-10) keeps a correct heading order. */}
       <div className="sticky top-0 z-10 bg-slate-50 pb-2 -mx-4 px-4 pt-2 space-y-2">
         {parsed.merchant_name && <h2 className="text-2xl font-bold">{parsed.merchant_name}</h2>}
         {parsed.receipt_date && <p className="text-xs text-slate-500">{parsed.receipt_date}</p>}
@@ -452,10 +301,6 @@ export default function ReviewScreen() {
 
           return (
             <Accordion.Item key={item.id} value={item.id} asChild>
-              {/* motion.dev "Review -> assignment transition" placement
-                  (§22.3): `layout` measures this row's box before and after
-                  every re-render and animates the difference, so the other
-                  rows reflow smoothly when this one's content changes. */}
               <motion.div layout className="assign-item-row space-y-2">
                 {/* Collapsed summary row */}
                 <Accordion.Header>
@@ -484,7 +329,6 @@ export default function ReviewScreen() {
               <Accordion.Content>
                 {expanded && (
                   <div className="space-y-3 pt-2 border-t border-slate-100">
-                    {/* §5.1 point 4 — item correction fields */}
                     <div className="flex gap-2">
                       <input
                         type="text"
@@ -569,9 +413,6 @@ export default function ReviewScreen() {
                       Remove item
                     </button>
 
-                    {/* §5.1.1 point 1 — mode switcher, Radix ToggleGroup
-                        (single-select radiogroup, roving-tabindex arrow-key
-                        navigation between the two options). */}
                     <ToggleGroup.Root
                       type="single"
                       value={mode}
@@ -662,9 +503,6 @@ export default function ReviewScreen() {
                       </ToggleGroup.Root>
                     )}
 
-                    {/* Person list — shared tick roster (assignment.equal),
-                        rendered as a plain checkbox in Equal split or an
-                        editable value field in Set amounts (§5.1.1 point 2). */}
                     <div className="space-y-2 text-sm">
                       {payers.map((name) => {
                         const isTicked = ticked.includes(name);
@@ -723,7 +561,6 @@ export default function ReviewScreen() {
         + Add missing item
       </motion.button>
 
-      {/* §5.1 point 6 — bill-level totals, each editable */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
         <h3 className="font-semibold text-sm text-slate-700">Bill totals</h3>
         <div className="grid grid-cols-2 gap-2 text-sm">
@@ -786,7 +623,6 @@ export default function ReviewScreen() {
         </div>
       </div>
 
-      {/* §5.1 point 7 — recovery actions row */}
       <div className="flex gap-3 text-sm">
         <button
           type="button"
@@ -820,7 +656,6 @@ export default function ReviewScreen() {
         </div>
       )}
 
-      {/* §5.1 point 8 — primary CTA, disabled (not hidden) while unresolved */}
       <motion.button
         type="button"
         onClick={handleConfirm}

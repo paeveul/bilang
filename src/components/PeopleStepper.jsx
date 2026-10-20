@@ -1,8 +1,3 @@
-// src/components/PeopleStepper.jsx — Item 24 Step 6. Design spec §1.2 row 3,
-// §3 "genuinely new" table: minus/number/plus, 48x48 targets, `role="group"`,
-// the count announced as "N people" (not conveyed by colour alone — §4
-// accessibility checklist). Dumb/presentational: RosterGate.jsx owns what
-// happens on increment/decrement (adding/removing a roster row).
 import { motion } from 'motion/react';
 
 const TAP_SCALE = { scale: 0.97 };

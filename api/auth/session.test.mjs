@@ -1,4 +1,3 @@
-// api/auth/session.test.mjs — Item 10 Checkpoint 2, Step 7.
 //
 // The real handler, with api/_lib/auth.js replaced by an in-memory stub.
 
@@ -122,8 +121,6 @@ test('other methods return 405', async () => {
   await handler({ method: 'POST', headers: {} }, res);
   assert.equal(res.statusCode, 405);
 });
-
-// --- Tony's approved MVP1 "cheap half": silent terms_version_seen sync -----
 
 test('GET with no VITE_TERMS_VERSION set: no sync attempted, response unchanged', async () => {
   const res = fakeRes();

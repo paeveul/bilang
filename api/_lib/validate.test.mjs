@@ -1,9 +1,5 @@
 // api/_lib/validate.test.mjs
 //
-// Tests for the server-side validation gap closed 2026-09-15 (assessment
-// §4.3 / §13.4.2 SM7): validateSplitCreateRequest() gaining qty/unit_price/
-// category checks, and the new validateParsedReceipt() shape-validator for
-// Claude's tool-call output in api/parse.js.
 //
 // Run: node --test api/_lib/validate.test.mjs
 // (added to package.json's "test" script in this pass — see that diff.)
@@ -177,8 +173,6 @@ test('payers: hidden ceiling of 200 people, plain rejection above it', () => {
   assert.equal(validateSplitCreateRequest(validSplitBody({ payers: roster(201) })), 'Invalid payers list');
 });
 
-// --- validateSplitCreateRequest: merchantName / receiptDate (Item 23, D4/D6) ---
-
 test('merchantName/receiptDate are optional; omitting both still passes', () => {
   assert.equal(validateSplitCreateRequest(validSplitBody()), null);
 });
@@ -210,8 +204,6 @@ test('receiptDate: rejects a non-ISO-formatted string', () => {
 test('receiptDate: rejects a non-string', () => {
   assert.equal(validateSplitCreateRequest(validSplitBody({ receiptDate: 20260928 })), 'Invalid receipt date');
 });
-
-// --- validateClaimRequest (PATCH /api/split, Item 24 Step 3) ---
 
 const claimSplit = { items: [{ id: 'i1' }, { id: 'i2' }], payers: ['Ali', 'Bea', ' Cy '] };
 const claimBody = (overrides = {}) => ({ action: 'claim', itemId: 'i1', payer: 'Ali', ...overrides });
@@ -319,8 +311,6 @@ test('payers: names that collide with Object.prototype keys are rejected (case-i
   assert.equal(ok(['Constructor Cy', 'proto']), null);
   assert.equal(ok(['__proto__x']), null);
 });
-
-// ---- Item 10 Checkpoint 2, Step 7: validateOtpRequest / validateOtpVerify -
 
 test('validateOtpRequest: accepts a well-formed email', () => {
   assert.equal(validateOtpRequest({ email: 'someone@example.com' }), null);

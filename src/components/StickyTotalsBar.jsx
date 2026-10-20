@@ -1,9 +1,3 @@
-// src/components/StickyTotalsBar.jsx — Item 24 Step 7. Design spec §2.1
-// row 7 / §2.4 / §3 "genuinely new": "No sticky bottom bar exists yet."
-// Shows "Your total" (or "Your total so far" while anything is unclaimed)
-// plus the "Not yet claimed" figure, hidden at zero (§2.4, P14). Bar shown
-// before an identity is chosen carries only the not-yet-claimed figure
-// (§2.4 "Bar before identity chosen").
 import AnimatedMoney from './AnimatedMoney.jsx';
 
 export default function StickyTotalsBar({ meName, yourTotalCents, allClaimed, unclaimedCents, unclaimedCount, snapTick }) {

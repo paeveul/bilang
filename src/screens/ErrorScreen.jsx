@@ -1,11 +1,3 @@
-// src/screens/ErrorScreen.jsx — Item 22 Step 5 (mechanical, presentational).
-// Ported from index.html's data-screen="error" + js/app.js's
-// bindErrorScreen(). "Start over" does a hard navigation to "/", matching
-// the vanilla behaviour exactly (a full reload clears all in-memory
-// creator-flow state, same as resetState() + showScreen('landing') did,
-// but via reload rather than in-app reset — kept identical rather than
-// "improved" here, since any change to error-recovery behaviour is a
-// product decision, not a migration one).
 import { useBillState } from '../state/BillContext.jsx';
 
 export default function ErrorScreen() {

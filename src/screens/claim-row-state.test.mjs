@@ -1,6 +1,3 @@
-// src/screens/claim-row-state.test.mjs — Item 24 Step 7.
-// Run: node --test src/screens/claim-row-state.test.mjs
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeRowState, namesList } from './claim-row-state.js';

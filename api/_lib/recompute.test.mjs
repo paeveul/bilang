@@ -136,8 +136,6 @@ test('per_person fallback: a hostile per_person key never becomes a payer or lea
   assert.equal(JSON.stringify([Object.keys(Object.prototype), Object.itemsCents]), before);
 });
 
-// ---- computeClaimTotals (Item 21 Step 4: recompute inside the claim write) ----
-
 test('computeClaimTotals: uses the SAME computeTotals() arithmetic — matches recomputeSplitTotals for the same inputs', () => {
   const b = body();
   const fromPost = recomputeSplitTotals(b).totals;

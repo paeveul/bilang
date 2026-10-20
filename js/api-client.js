@@ -3,15 +3,7 @@
 // Thin fetch wrapper for the two serverless endpoints. Nothing else in the
 // client-side app should call fetch() against /api/* directly.
 //
-// Item 22 Step 3: calls now go through the versioned surface, /api/v1/*,
-// which vercel.json rewrites to the unversioned /api/* files (V2 — the
-// files under api/ are not renamed, only reached via a different path).
-// V1: every endpoint is versioned, including endpoints not built yet.
 
-// Item 10 Step 9 (plans §10.3, "js/api-client.js — modified"): a response
-// carrying code "session_expired" is thrown as a SessionExpiredError, so
-// callers can branch on it (the in-place re-auth of Step 11) without matching
-// message text. The message is still the server's own error string.
 export class SessionExpiredError extends Error {
   constructor(message, body) {
     super(message);
@@ -78,14 +70,6 @@ export async function getSplit(id) {
 }
 
 /**
- * Item 24 Step 7 — claim or un-claim one item. Same endpoint as getSplit(),
- * a different HTTP method (PATCH /api/v1/split?id=<id>), per api/split.js's
- * handler. Unlike parseReceipt/createSplit/getSplit above, this can fail
- * with a meaningful, expected non-200 (409 already_claimed / 403
- * not_your_claim / 429 / 503 / 409 claiming_unavailable per Item 24
- * §24.3's response table) that the caller needs to branch on by more than
- * just a message string — so this throws a PatchSplitError carrying the
- * HTTP status and the response body's `code`, rather than only a message.
  *
  * @param {string} id
  * @param {{action:'claim'|'unclaim', itemId:string, payer:string, sharedWith?:string[]}} body

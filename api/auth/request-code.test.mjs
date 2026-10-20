@@ -1,4 +1,3 @@
-// api/auth/request-code.test.mjs — Item 10 Checkpoint 2, Step 7.
 //
 // The real handler, with api/_lib/auth.js and api/_lib/ratelimit-otp.js
 // replaced by in-memory stubs — same "stub the data-access layer, run the

@@ -1,9 +1,3 @@
-// src/screens/PaymentScreen.jsx — Item 22 Step 7: payment-handle entry
-// screen. Ported from index.html's data-screen="payment" +
-// js/app.js's bindPayment()/submitSplit(). Display-only field, never
-// validated beyond "not empty" — matches vanilla behaviour exactly (the
-// payment handle is free text shown as-is on the payer view; validating
-// its shape is out of scope everywhere in this codebase, not just here).
 //
 // submitSplit() calls createSplit() (js/api-client.js, unchanged) — the
 // one place /api/split is called from the creator's side of the app.
@@ -32,8 +26,6 @@ export default function PaymentScreen() {
     goToScreen('creating');
 
     try {
-      // Item 10 Step 11: the payload is built once, so a retry after sign-in
-      // submits exactly the corrected bill the user saw, not a rebuilt one.
       const payload = buildSplitPayload({ parsed, payers, assignments, ownerPaymentHandle: trimmed });
       const { url } = await runWithSession(() => createSplit(payload));
       setShareUrl(`${window.location.origin}${url}`);

@@ -1,6 +1,3 @@
-// js/api-client.test.mjs — Item 10 Checkpoint 3, Step 9.
-// fetch is stubbed. Covers the credentials change and the typed session_expired error.
-
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {

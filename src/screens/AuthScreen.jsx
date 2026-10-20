@@ -1,35 +1,7 @@
-// src/screens/AuthScreen.jsx — Item 10 Checkpoint 4, Step 10 (sign-in) and
-// Step 11 (in-place re-auth, rendered as an overlay).
 //
-// Two steps, one screen: email first, then the six-digit code. Plans §10.3
-// "New auth screen": email field, then code field, resend control with a
-// visible 60-second cooldown, and a plain error area. Every error shown is the
-// server's own `error` text (serverMessage in ../auth/auth-flow.js). Only a
-// request that never got an answer uses the network fallback.
 //
-// variant="page"    — the full sign-in screen, shown before the creator flow.
-// variant="overlay" — the same form shown above the current screen after a
-//                     session_expired error (Step 11). The screen underneath
-//                     stays mounted, so nothing the user typed is lost.
 //
-// Terms tick moved to the email step (Alex, 2026-10-10 — bilang-pm-tracker.md
-// v2.78 change-log): shown to every user, before any code is sent, not just
-// first-time accounts. "Send me a code" stays disabled until ticked, and the
-// code is only SENT after the tick — api/auth/request-code.js now refuses
-// before dispatch (and before the limiter increments) if the tick fields are
-// missing, so a refused first-time account never burns a code. The server's
-// own D15 check at verify-code.js stays in place underneath as a
-// defense-in-depth belt-and-braces check; it should not normally fire from
-// this screen since the tick already happened before request-code was ever
-// called. The terms version is read from VITE_TERMS_VERSION (see
-// termsVersionFrom in ../auth/auth-flow.js) and is not hardcoded here.
 //
-// Single consent tick (2026-10-19, Alex's request relayed via the orchestrator):
-// this tick is now the ONLY one in the app. It covers the Terms of Service, the
-// Privacy Notice and the receipt-photo disclosure (photo sent to Anthropic to be
-// read, not stored afterwards). The photo sentence is its own visible line
-// beside the tick, not folded into the Terms link. LandingScreen no longer has
-// a consent gate. Wording lives in src/legal/mock-legal-content.js.
 //
 // Visible links to the mock Terms of Service / Privacy Notice sit right next
 // to the tick (not footer-only).
@@ -104,10 +76,6 @@ export default function AuthScreen({
     e.preventDefault();
     setBusy(true);
     setError('');
-    // The tick already happened on the email step, before this code was ever
-    // sent — so this always carries the same acceptance the request-code
-    // call just made. Still sent every time (not conditionally), matching
-    // the server's own defense-in-depth check at verify-code.js (D15).
     const terms = { termsAccepted: termsTicked, ...(termsVersion ? { termsVersion } : {}) };
     try {
       await verifyCode(sentTo, normaliseCode(code), terms);

@@ -1,7 +1,3 @@
-// src/state/bill-context-assignment.test.mjs — Item 22 Step 8: tests for
-// BillContext.jsx's reducer logic around the combined correction +
-// assignment screen's assignment shape (§5.1.1 — mode switching, the
-// RM/% toggle, tick/untick behaviour, item correction actions).
 //
 // Pure reducer testing, same pattern as js/totals.test.mjs and
 // router.jsx's resolveForTest — no DOM, no JSX transform needed, since this
@@ -144,8 +140,6 @@ test('REMOVE_PAYER — refuses to remove the last payer', () => {
   assert.equal(s2, s);
 });
 
-// --- Item 24 Step 6: roster gate actions ---
-
 test('RENAME_PAYER — renames by index and propagates into equal + manual assignments', () => {
   let s = stateWith({ payers: ['Me', 'Person 2'] });
   s = reducer(s, { type: 'ENSURE_ITEM_DEFAULT_ASSIGNMENT', itemId: 'i1' });
@@ -220,9 +214,6 @@ test('UPDATE_ITEM_FIELD, ADD_ITEM, REMOVE_ITEM — item correction round-trips c
   s = reducer(s, { type: 'REMOVE_ITEM', itemId: 'i1' });
   assert.equal(s.parsed.items.length, 1);
   assert.equal(s.parsed.items[0].id, newItemId);
-  // Removing an item also removes its assignment, so no orphaned
-  // assignment data lingers (§5.1's own "no orphaned assignment data"
-  // interaction/edge-case requirement).
   assert.equal(s.assignments.i1, undefined);
 });
 

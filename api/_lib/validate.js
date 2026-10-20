@@ -1,9 +1,8 @@
 // api/_lib/validate.js
 //
 // Basic request validation + short split-ID generation. This is intentionally
-// minimal — retry logic, OCR failure/timeout fallback, and oversized-image
-// handling beyond a simple size cap are explicit MVP-3 scope (roadmap D6),
-// not built here.
+// minimal: retry logic, OCR failure/timeout fallback, and oversized-image
+// handling beyond a simple size cap are later scope, not built here.
 
 const crypto = require('crypto');
 
@@ -31,12 +30,9 @@ function isFiniteNumber(value) {
 const ID_ALPHABET = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ID_LENGTH = 9;
 
-/**
- * Generate a short, cryptographically random split id, e.g. "K7mP2xQaN".
- * Not a security boundary by itself (MVP-1 splits are read-only after
- * creation, per the roadmap's cut list — there is no write path to protect
- * yet), just a compact, URL-friendly, hard-to-guess identifier.
- */
+// Generate a short, cryptographically random split id, e.g. "K7mP2xQaN".
+// Not a security boundary by itself, just a compact, URL-friendly,
+// hard-to-guess identifier.
 function generateSplitId() {
   const bytes = crypto.randomBytes(ID_LENGTH);
   let id = '';
@@ -210,11 +206,11 @@ function validateSplitCreateRequest(body) {
       return 'Invalid payers list';
     }
   }
-  // Item 23, D4/D6: both genuinely optional (undefined = "no opinion",
-  // null = "read but illegible") — round-tripped from whatever
+  // merchantName and receiptDate are both genuinely optional (undefined = "no
+  // opinion", null = "read but illegible"), round-tripped from whatever
   // api/parse.js returned, same pattern as items/assignments/totals. Only
-  // type/shape/length are checked here, same defensive-but-lightweight
-  // posture as every other optional field on this request.
+  // type/shape/length are checked here, same defensive-but-lightweight posture
+  // as every other optional field on this request.
   if (body.merchantName !== undefined && body.merchantName !== null) {
     if (typeof body.merchantName !== 'string' || body.merchantName.length > MAX_STRING_LEN) {
       return 'Invalid merchant name';
@@ -285,9 +281,9 @@ function validateParsedReceipt(parsed) {
   return null;
 }
 
-// ---- Item 10 Checkpoint 2, Step 7: OTP request/verify validators ----------
+// ---- OTP request/verify validators --------------------------------------
 
-const MAX_EMAIL_LEN = 254; // plans §10.3, D per checkpoint brief
+const MAX_EMAIL_LEN = 254; // longest valid email address (RFC 5321)
 const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_CODE_RE = /^\d{6}$/;
 
@@ -302,8 +298,8 @@ function validateEmailShape(email) {
 }
 
 /**
- * Validate a POST /api/auth/request-code body: `{ email }`. Matches the
- * endpoint contract's "Malformed email" -> 400 case (plans §10.3).
+ * Validate a POST /api/auth/request-code body: `{ email }`. A malformed email
+ * is rejected with a 400.
  *
  * @param {*} body
  * @returns {string|null}
@@ -317,12 +313,12 @@ function validateOtpRequest(body) {
 
 /**
  * Validate a POST /api/auth/verify-code body: `{ email, code, termsAccepted,
- * termsVersion }`. Only shape is checked here — email format, code exactly
- * six digits, and (when present) termsAccepted/termsVersion's basic types.
- * Whether termsAccepted/termsVersion are REQUIRED depends on whether the
- * account is being created for the first time, which is only known after
- * the OTP has been verified and the accounts upsert has run (D15) — that
- * enforcement lives in api/auth/verify-code.js, not here.
+ * termsVersion }`. Only shape is checked here: email format, code exactly six
+ * digits, and (when present) termsAccepted/termsVersion's basic types. Whether
+ * termsAccepted/termsVersion are REQUIRED depends on whether the account is
+ * being created for the first time, which is only known after the OTP has been
+ * verified and the accounts upsert has run; that enforcement lives in
+ * api/auth/verify-code.js, not here.
  *
  * @param {*} body
  * @returns {string|null}
@@ -332,7 +328,7 @@ function validateOtpVerify(body) {
     return 'Enter the 6-digit code from your email.';
   }
   const emailError = validateEmailShape(body.email);
-  if (emailError) return 'Enter the 6-digit code from your email.'; // fixed message per plans §10.3 — never distinguishes email vs code shape
+  if (emailError) return 'Enter the 6-digit code from your email.'; // fixed message — never distinguishes email vs code shape
   if (typeof body.code !== 'string' || !OTP_CODE_RE.test(body.code)) {
     return 'Enter the 6-digit code from your email.';
   }

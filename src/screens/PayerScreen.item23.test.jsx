@@ -1,10 +1,3 @@
-// src/screens/PayerScreen.item23.test.jsx — Item 23 Step 5: the payer-view
-// header. Amelia's placement decision (2026-09-29, functional-only): merchant
-// name/receipt date sit between the heading and whichever state block
-// follows, rendering once regardless of state, absent (not a placeholder)
-// when the value is null. Covers both the claiming-available header and the
-// read-only fallback header (a judgment call — see this pass's dispatch
-// report).
 //
 // Run: node --import ./src/test/register-jsx.mjs --test src/screens/PayerScreen.item23.test.jsx
 import '../test/jsdom-setup.mjs';

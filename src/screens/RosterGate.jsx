@@ -1,10 +1,3 @@
-// src/screens/RosterGate.jsx — Item 24 Step 6: the roster gate
-// (`bilang-item-24-roster-gate-and-claim-screens.md` §1). Lives on
-// ParsingScreen.jsx, below the scan spinner (§1.1 "while the scan
-// processes" — not a new screen, not a new route). Mounted for the whole
-// life of the wait, so its own local state (touched/showErrors) can safely
-// live in this component rather than BillContext: nothing here needs to
-// survive a re-mount, only a re-render.
 //
 // Renaming happens here while `assignments` is still empty (parsing hasn't
 // finished, so ReviewScreen's per-item default-assignment effect hasn't run
@@ -38,9 +31,6 @@ export default function RosterGate({ scanDone, touched, onTouch, onContinue, sho
     if (count === payers.length) return;
 
     if (count > payers.length) {
-      // §1.3: crossing from solo to multi blanks the host's own row (it
-      // stops meaning "you" on a friend's phone and starts requiring a real
-      // name — §1.3's "Your name" rule).
       if (payers.length === 1 && payers[0] === 'Me') renamePayer(0, '');
       for (let n = payers.length + 1; n <= count; n += 1) {
         addPayer(`Person ${n}`);
@@ -49,9 +39,6 @@ export default function RosterGate({ scanDone, touched, onTouch, onContinue, sho
       for (let i = payers.length; i > count; i -= 1) {
         removePayer(payers[i - 1]);
       }
-      // Back down to solo: restore the default 'Me' if the host never
-      // typed a real name over the blank row (§1.3: "roster name stays
-      // 'Me' while people = 1").
       if (count === 1 && (payers[0] === '' || payers[0] === undefined)) {
         renamePayer(0, 'Me');
       }

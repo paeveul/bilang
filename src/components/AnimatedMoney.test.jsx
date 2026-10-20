@@ -1,8 +1,3 @@
-// src/components/AnimatedMoney.test.jsx — Item 22 Step 9: the safety-critical
-// half of the "Totals recalculating" motion.dev placement (§22.3 of
-// bilang-mvp1-implementation-plans.md): "Money figures must never animate
-// into their final state. Animate while editing; snap instantly and exactly
-// on blur, on confirm, and on any server-authoritative update."
 //
 // What this file actually proves, and what it deliberately does NOT try to
 // prove: real spring physics timing (how many milliseconds an animation
@@ -63,10 +58,6 @@ test('editing (snapTick unchanged): a cents change animates — the spring does 
 
   fireEvent.click(getByRole('button'));
 
-  // §22.3's "animate while editing": `spring.set()` schedules a spring
-  // animation toward 5000 — it must NOT already read 5000 in this same
-  // synchronous tick, which is exactly what would happen if this path
-  // called `.jump()` instead.
   assert.notEqual(
     capturedRef.current.get(),
     5000,
@@ -105,9 +96,6 @@ test('blur / confirm (snapTick bumped): a cents change snaps — the spring reac
 
   fireEvent.click(getByRole('button'));
 
-  // This is the exact requirement from §22.3: at the moment of blur/confirm,
-  // the underlying value must already BE the figure being committed — not
-  // still mid-animation toward it.
   assert.equal(
     capturedRef.current.get(),
     5000,

@@ -1,6 +1,3 @@
-// src/components/StatusBadge.jsx — Item 24 Step 7. Design spec §3
-// "genuinely new": "Needed as text, not colour-only. Tiny; reuses tokens."
-// Used for the payer claim row's "Yours" pin (§2.3).
 export default function StatusBadge({ children, className = '' }) {
   return (
     <span

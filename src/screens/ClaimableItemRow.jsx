@@ -1,14 +1,4 @@
-// src/screens/ClaimableItemRow.jsx — Item 24 Step 7: the interactive payer
-// claim row, design spec §2.3's state table (P4-P11a) plus the conflict
-// notes (P12/P12a/P12b, §7 addendum). Presentation only — every state's
-// classification comes from claim-row-state.js's pure computeRowState();
-// this component turns that into markup, actions and motion.
 //
-// motion.dev "payer live claim updates" (design spec §2.5's table, Item 22
-// Step 9 placement 4): action buttons fade out when a row becomes claimed
-// by someone else, the conflict note fades in/out, the "Yours" badge fades
-// in — all via AnimatePresence, under 250ms, ease-out, no bounce. Inherits
-// reduced-motion for free from App.jsx's <MotionConfig reducedMotion="user">.
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { computeRowState, namesList } from './claim-row-state.js';
@@ -43,7 +33,7 @@ export default function ClaimableItemRow({
   }
 
   function togglePickerName(name) {
-    if (name === me) return; // "your own name is ticked and locked" (§2.3)
+    if (name === me) return; // "your own name is ticked and locked"
     setPickerTicked((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);

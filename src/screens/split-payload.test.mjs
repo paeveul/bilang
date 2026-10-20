@@ -28,8 +28,6 @@ test('payload carries the ordered payers list', () => {
   assert.equal(body.ownerPaymentHandle, 'DuitNow 012');
 });
 
-// --- Item 23: merchant_name / receipt_date round-trip through the payload ---
-
 test('payload carries merchantName/receiptDate through from parsed.merchant_name/receipt_date', () => {
   const body = buildSplitPayload({
     parsed: { ...parsed, merchant_name: 'Restoran Uncle', receipt_date: '2026-09-28' },

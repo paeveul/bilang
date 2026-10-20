@@ -1,15 +1,7 @@
-// src/screens/payer-item-row.security.test.mjs — Item 22 Step 6's kept
-// security test (22.4 Step 6 / 22.6 point 2: "This test must exist and
-// must be kept," "not a one-off manual check").
 //
 // Run via: node --test src/screens/payer-item-row.security.test.mjs
 // (added to package.json's "test" script in this pass — see that diff).
 //
-// No new dependency: react-dom/server's renderToStaticMarkup is already
-// available transitively through the react-dom dependency Step 1 added,
-// and this file imports payer-item-row.js directly (plain
-// React.createElement, not JSX — see that file's header comment for why
-// that avoids needing a JSX transform under Node's own test runner).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';

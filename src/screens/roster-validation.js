@@ -1,12 +1,3 @@
-// src/screens/roster-validation.js — Item 24 Step 6: pure validation for the
-// roster gate (RosterGate.jsx), mirroring the server's rule in
-// api/_lib/validate.js's isValidPayersList (1-20 characters once trimmed,
-// unique case-insensitively; MAX_PAYERS' hidden 200-person ceiling is a
-// server-side-only concern, F5, never shown in any UI or copy). Exists so
-// the gate can block Continue with the design spec's exact copy (§1.5)
-// before ever reaching the server. Plain JS (no JSX), no dependencies — same
-// pattern as review-validation.js.
-
 export const MAX_NAME_LEN = 20;
 
 const isBlank = (name) => typeof name !== 'string' || name.trim().length === 0;
@@ -33,7 +24,7 @@ export function validateRoster(payers) {
   const duplicateIndices = [];
 
   payers.forEach((name, index) => {
-    if (solo) return; // §1.2: at people = 1 there is nothing to validate at all
+    if (solo) return; // at people = 1 there is nothing to validate at all
     if (isBlank(name)) {
       if (index !== 0) blankIndices.push(index); // index 0's own message is hostNameBlank
       return;
@@ -43,7 +34,7 @@ export function validateRoster(payers) {
     const key = trimmed.toLowerCase();
     if (seen.has(key)) {
       duplicateIndices.push(index);
-      duplicateIndices.push(seen.get(key)); // both rows are marked, per §1.5
+      duplicateIndices.push(seen.get(key)); // both rows are marked
     } else {
       seen.set(key, index);
     }

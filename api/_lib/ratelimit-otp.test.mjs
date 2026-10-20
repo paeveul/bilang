@@ -1,9 +1,4 @@
-// api/_lib/ratelimit-otp.test.mjs — Item 10 Checkpoint 2, Step 5.
 //
-// Runs entirely against a mocked global.fetch (no real Upstash instance
-// reachable from this test environment). See the Checkpoint 2 handback
-// report for what was additionally verified against the real Upstash
-// instance in .env (a local, throwaway driver script, not committed).
 //
 // Run: node --test api/_lib/ratelimit-otp.test.mjs
 
@@ -173,8 +168,6 @@ test('verify-code: 61st attempt from one IP within an hour is limited (the 60/1h
   assert.equal(last.outcome, 'limited');
 });
 
-// ---- isolation (plans §10.6 verification #15-17) -------------------------
-
 test('isolation: every key produced begins with rl:otp: and no key collides with rl:poll: or rl:scan:', async () => {
   const { checkRequestCode, checkVerifyCode } = freshModule();
   await checkRequestCode(fakeReq('60.0.0.1'), 'iso@example.com');
@@ -192,8 +185,6 @@ test('isolation: email hashing never leaks the raw address into a key', async ()
     assert.ok(!key.includes('@'), `raw email leaked into key: ${key}`);
   }
 });
-
-// ---- fail-closed (D10) ----------------------------------------------------
 
 test('fail-closed: an unreachable store refuses both send and verify with outcome "unavailable"', async () => {
   const { checkRequestCode, checkVerifyCode } = freshModule();

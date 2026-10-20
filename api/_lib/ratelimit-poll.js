@@ -1,21 +1,20 @@
-// api/_lib/ratelimit-poll.js — Item 24 Step 5
+// api/_lib/ratelimit-poll.js
 //
-// Fixed-window rate limiter guarding GET and PATCH /api/split (Item 24 C11/
-// C13): the anonymous payer link's read/claim surface. Own module, own
-// configuration, own key namespace — imports nothing from any other limiter
-// (there is no other limiter module in this codebase yet; this constraint
-// still applies when one is added later, per Item 24 C11 / plans §24.3).
+// Fixed-window rate limiter guarding GET and PATCH /api/split: the anonymous
+// payer link's read/claim surface. Own module, own configuration, own key
+// namespace; imports nothing from any other limiter (there is no other limiter
+// module in this codebase yet, and this constraint still applies when one is
+// added later).
 //
 // Mechanism: INCR the key, then EXPIRE it only on the first increment in the
-// window (count === 1) — a fixed window, not a sliding one. Store: Upstash
-// Redis REST API over plain `fetch`, no new dependency (Standing Rule 3a).
+// window (count === 1), a fixed window, not a sliding one. Store: Upstash
+// Redis REST API over plain `fetch`, no new dependency.
 //
-// Key: `rl:poll:<ip>` (Item 24 Q4, Alex 2026-09-25 — count by IP, read only
-// inside this module, never written to any table or returned to a caller).
-// Ceiling: 900 requests/minute/key (Tony, Open Item 14b, 2026-09-26) — a
-// config constant independent of the client's own decay schedule (plans
-// §24.3), which paces a well-behaved client; this ceiling exists to stop
-// abuse or a misbehaving client regardless of how it paces itself.
+// Key: `rl:poll:<ip>` (counted by IP; read only inside this module, never
+// written to any table or returned to a caller).
+// Ceiling: 900 requests/minute/key, a config constant independent of the
+// client's own decay schedule, which paces a well-behaved client; this ceiling
+// exists to stop abuse or a misbehaving client regardless of how it paces itself.
 //
 // Fails open on a store outage: a poll must not break because Redis is
 // down. Logs once per outage (not once per request), and once again if a

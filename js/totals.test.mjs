@@ -138,8 +138,6 @@ test('edge case — item assigned to nobody AND a payer with zero items gets 0 t
   assert.equal(result.perPerson.B.taxCents, 0);
   assert.equal(result.perPerson.B.serviceCents, 0);
   assert.equal(result.perPerson.B.totalCents, 0);
-  // A is the only payer with items, so A carries the tax + service on A's own
-  // item; the unclaimed item carries its own share (Item 24 Step 2 rule).
   assert.equal(result.perPerson.A.taxCents, 80);
   assert.equal(result.perPerson.A.serviceCents, 160);
   assert.equal(sumPerPersonTotals(result.perPerson), 2000 + 80 + 160);
@@ -153,14 +151,6 @@ test('helper functions — toCents, fromCents, formatRM basic behaviour', () => 
   assert.equal(formatRM(10.5), 'RM10.50');
   assert.equal(formatRM(undefined), 'RM0.00');
 });
-
-// ---------------------------------------------------------------------------
-// Item 22 Step 8 — manual per-person override mode (§5.1.1). These tests
-// specifically target the computeTotals() extension described in that
-// file's own header: existing equal-split behaviour (all tests above) must
-// stay byte-for-byte unchanged, and the new manual-mode path needs its own
-// hard coverage since it's real money math, not a display change.
-// ---------------------------------------------------------------------------
 
 test('manual mode — exact allocation sums correctly and matches the equal-split call shape', () => {
   const items = [{ id: 'i1', name: 'Satay', qty: 1, unit_price: 10.53, line_total: 10.53 }];
@@ -180,9 +170,6 @@ test('manual mode — exact allocation sums correctly and matches the equal-spli
 });
 
 test('manual mode — under-allocated item is represented honestly (sum of what was typed, not the nominal line_total)', () => {
-  // Creator ticked 2 people, typed one value (RM3.00), left the other
-  // blank/unset — per §5.1.1 point 4, an unset value contributes RM0.00,
-  // never a silently-invented "whoever's left" remainder.
   const items = [{ id: 'i1', name: 'Item', qty: 1, unit_price: 12, line_total: 12 }];
   const assignments = { i1: { mode: 'manual', amounts: { A: 300 } } }; // B has no entry at all
   const billTotals = { subtotal: 12, service_charge: 0, tax: 0, grand_total: 12 };
@@ -296,11 +283,6 @@ test('percentToCents -> centsToPercent round trip never breaks the exact-match c
   // through the display percentage, which would introduce drift.
   const storedCents = percentToCents(33, 10.53);
   assert.equal(storedCents, 347); // 33% of 1053 = 347.49 -> rounds to 347
-  // Converting back for display happens to read exactly "33" again here —
-  // that's not guaranteed in general (rounding is a one-way street through
-  // cents), it's just what this particular pair of numbers produces. The
-  // guarantee §5.1.1 point 7 actually makes is the one below: whatever the
-  // display shows, the STORED cents value is what the block checks.
   const displayPercent = centsToPercent(storedCents, 10.53);
   assert.equal(displayPercent, 33);
 });
@@ -338,13 +320,6 @@ test('formatRMLocked — Tony\'s locked-copy spacing ("RM 1.00"), distinct from 
   assert.equal(formatRMLocked(0.3), 'RM 0.30');
   assert.equal(formatRM(1), 'RM1.00'); // unchanged, still used everywhere else in the app
 });
-
-// ---------------------------------------------------------------------------
-// Item 24 Step 2 — items nobody has claimed yet. They are left unassigned and
-// charged to no one; `unclaimed` reports them (with their share of tax and
-// service) as their own figure, so per-person totals plus `unclaimed` always
-// add up to the whole bill.
-// ---------------------------------------------------------------------------
 
 const UC_ITEMS = [
   { id: 'i1', name: 'Rice', qty: 1, unit_price: 10, line_total: 10 },

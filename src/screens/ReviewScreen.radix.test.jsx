@@ -1,18 +1,4 @@
-// src/screens/ReviewScreen.radix.test.jsx — Item 22 Step 8's Radix retrofit
-// (this pass): tests for the three new-Radix-driven interactions
-// ReviewScreen.jsx's header comment describes, none of which
-// renderToStaticMarkup (payer-item-row.security.test.mjs's approach) or a
-// pure-reducer test (bill-context-assignment.test.mjs's approach) can
-// verify — all three need a live DOM, real keyboard events, and real
-// browser focus:
 //
-//   1. Accordion block-on-collapse: closing an unresolved manual-mode row
-//      is rejected and the row stays open (§5.1.1 point 4).
-//   2. Real focus-stealing on that same block, replacing the first build's
-//      aria-live-only simplification — the first ticked payer's amount
-//      field actually receives DOM focus.
-//   3. Segmented-control keyboard behaviour: Radix ToggleGroup's
-//      roving-tabindex arrow-key navigation between the two options.
 //
 // Uses src/test/jsdom-setup.mjs (live DOM) and src/test/register-jsx.mjs
 // (JSX transform for `node --test`, since this is the first test in the

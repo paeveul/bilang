@@ -1,5 +1,3 @@
-// src/auth/auth-flow.test.mjs — Item 10 Checkpoint 4: pure helpers behind the
-// sign-in screen. No DOM, no network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {

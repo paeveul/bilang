@@ -1,16 +1,15 @@
-// api/_lib/cookies.js — Item 10 Checkpoint 1, Step 4.
+// api/_lib/cookies.js
 //
 // Small, dependency-free cookie helpers. Deliberately no product logic: this
-// module knows nothing about session cookies, account ids, or auth — it does
+// module knows nothing about session cookies, account ids, or auth; it does
 // not know the names `bilang_at` / `bilang_rt` / `bilang_sa` exist. That
-// knowledge belongs to api/_lib/auth.js (Item 10 Step 6, not built yet).
+// knowledge belongs to api/_lib/auth.js.
 //
-// serializeCookie always applies the security-flag set the D3/10.3 cookie
-// spec in bilang-mvp1-implementation-plans.md §10.3 requires of every Bilang
-// cookie — HttpOnly, Secure, SameSite=Lax, Path=/ — because this repo has
-// exactly one cookie use case (first-party session cookies) and no reason to
-// ship a general-purpose serializer that could produce a non-HttpOnly or
-// non-Secure cookie by omission.
+// serializeCookie always applies the security-flag set every Bilang cookie
+// requires: HttpOnly, Secure, SameSite=Lax, Path=/. This repo has exactly one
+// cookie use case (first-party session cookies) and no reason to ship a
+// general-purpose serializer that could produce a non-HttpOnly or non-Secure
+// cookie by omission.
 
 /**
  * Read one cookie's value from a request's `Cookie` header.

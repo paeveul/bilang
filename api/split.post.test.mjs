@@ -22,10 +22,6 @@ require.cache[supabasePath] = {
     insertAnalyticsRows: async () => {},
   },
 };
-// Item 10 Step 8: the auth layer is stubbed. requireAccount mirrors its
-// contract (accountId on success; 401 session_expired and null otherwise) so
-// these tests prove the handler's wiring, not Supabase. The real requireAccount
-// is covered by api/_lib/auth.test.mjs.
 const authPath = require.resolve('./_lib/auth.js');
 let authAccountId = 'acct-1';
 require.cache[authPath] = {
@@ -101,8 +97,6 @@ beforeEach(() => {
   splitRow = null;
   authAccountId = 'acct-1';
 });
-
-// --- Item 10 Step 8: session gate ---
 
 test('unsigned POST: 401 session_expired, nothing stored, and validation is never reached', async () => {
   authAccountId = null;
@@ -221,8 +215,6 @@ test('GET returns payers and version; a row without them returns null and 0', as
   assert.equal(res.body.payers, null);
   assert.equal(res.body.version, 0);
 });
-
-// --- Item 23: merchant_name / receipt_date ---
 
 test('POST passes merchantName/receiptDate through to storage as merchant_name/receipt_date', async () => {
   const { res } = await post(postBody({ merchantName: 'Restoran Uncle', receiptDate: '2026-09-28' }));

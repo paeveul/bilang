@@ -1,8 +1,3 @@
-// src/screens/ReviewScreen.item23.test.jsx — Item 23 Step 4: the
-// correction-screen header. §5.1 point 1 / D5/D6: merchant name renders as a
-// prominent heading above "Check the items", receipt date as a caption
-// beneath it, both read-only, and each line simply absent (not a
-// placeholder) when the underlying value is null.
 //
 // Run: node --import ./src/test/register-jsx.mjs --test src/screens/ReviewScreen.item23.test.jsx
 import '../test/jsdom-setup.mjs';

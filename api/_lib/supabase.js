@@ -1,11 +1,10 @@
 // api/_lib/supabase.js
 //
-// Thin data-access layer (roadmap D7 — "keep Supabase access code isolated
-// behind a thin data-access module, not scattered raw calls throughout the
-// app, so a future database migration stays cheap"). This is the ONLY file
-// in the whole codebase that imports @supabase/supabase-js or talks to the
-// database directly. If Alex ever migrates off Supabase, this is the only
-// file that needs to change.
+// Thin data-access layer: keeps Supabase access code isolated behind one module
+// rather than scattered raw calls throughout the app, so a future database
+// migration stays cheap. This is the only file that talks to the database
+// directly (authentication is isolated the same way in api/_lib/auth.js). If
+// the project ever migrates off Supabase, this is the file that needs to change.
 
 const { createClient } = require('@supabase/supabase-js');
 const { computeClaimTotals } = require('./recompute');
@@ -21,12 +20,11 @@ function getClient() {
     }
     client = createClient(url, key, {
       auth: { persistSession: false },
-      // Bilang's tables live under the dedicated `bilang` Postgres schema,
-      // not `public` (Open Item 21, decided 2026-09-29 — see
-      // supabase/schema.sql). This tells PostgREST which schema to query;
-      // the corresponding "Exposed schemas" dashboard setting (Settings ->
-      // API) must also list `bilang` in each Supabase project, or this
-      // client will get errors reaching it even though this option is set.
+      // Bilang's tables live under the dedicated `bilang` Postgres schema, not
+      // `public` (see supabase/schema.sql). This tells PostgREST which schema to
+      // query; the corresponding "Exposed schemas" dashboard setting (Settings ->
+      // API) must also list `bilang` in each Supabase project, or this client
+      // will get errors reaching it even though this option is set.
       db: { schema: 'bilang' },
     });
   }
@@ -35,10 +33,10 @@ function getClient() {
 
 const SPLIT_COLUMNS = 'id, items, assignments, totals, owner_payment_handle, created_at, expires_at';
 const SPLIT_COLUMNS_WITH_ROSTER = `${SPLIT_COLUMNS}, payers, version`;
-// Item 23 (merchant name + receipt date) — a third, further-additive column
-// set, same layering the payers/version columns already established: try
-// the widest select first, fall back a step at a time if a migration hasn't
-// landed on this database yet. See getSplit()'s fallback chain below.
+// A third, further-additive column set (merchant name + receipt date), same
+// layering the payers/version columns already established: try the widest
+// select first, fall back a step at a time if a migration has not landed on
+// this database yet. See getSplit()'s fallback chain below.
 const SPLIT_COLUMNS_WITH_ROSTER_AND_RECEIPT = `${SPLIT_COLUMNS_WITH_ROSTER}, merchant_name, receipt_date`;
 
 // True when the database rejected a statement because a column does not exist
@@ -69,10 +67,10 @@ function warnOnce(key, message) {
  * @param {object} params.totals
  * @param {string} params.ownerPaymentHandle
  * @param {string} params.expiresAt - ISO timestamp
- * @param {string} [params.merchantName] - Item 23, D4. Omit (undefined) to
+ * @param {string} [params.merchantName] - Omit (undefined) to
  *   skip the column entirely; pass null explicitly for "read but illegible".
- * @param {string} [params.receiptDate] - Item 23, D4. Same undefined/null rule.
- * @param {string} [params.accountId] - Item 10 Step 8. The signed-in creator's
+ * @param {string} [params.receiptDate] - Same undefined/null rule.
+ * @param {string} [params.accountId] - The signed-in creator's
  *   account id (from requireAccount), persisted to splits.account_id. Omit
  *   (undefined) to leave the column unset; never returned by GET /api/split.
  * @returns {Promise<object>} the inserted row
@@ -102,10 +100,10 @@ async function createSplit({
   const insert = (r) => supabase.from('splits').insert(r).select().single();
 
   const withPayers = payers === undefined ? row : { ...row, payers };
-  // Item 23, D4: same undefined-means-"don't send the column" convention as
-  // payers above. A caller that DID get a value from parse (even a null —
-  // "read but illegible") passes it through; a caller with no opinion on
-  // these two fields at all (legacy call shape) omits them.
+  // Same undefined-means-"don't send the column" convention as payers above. A
+  // caller that DID get a value from parse (even a null, "read but illegible")
+  // passes it through; a caller with no opinion on these two fields at all
+  // (legacy call shape) omits them.
   const withReceipt =
     merchantName === undefined && receiptDate === undefined
       ? withPayers
@@ -115,11 +113,11 @@ async function createSplit({
   if (!error) return data;
   if (!isMissingColumnError(error)) throw error;
 
-  // Progressively narrower column sets, in case only some of Item 23's /
-  // Item 24's additive migrations have landed on this database yet — same
-  // graceful-fallback discipline the payers/version columns established
-  // (real split rows exist post-Item-24, so a hard migration-order
-  // dependency here would break existing writes).
+  // Progressively narrower column sets, in case only some of the additive
+  // migrations have landed on this database yet: the same graceful-fallback
+  // discipline the payers/version columns established (real split rows now
+  // exist, so a hard migration-order dependency here would break existing
+  // writes).
   if (withReceipt !== withPayers) {
     warnOnce(
       'write-receipt',
@@ -156,7 +154,7 @@ async function getSplit(id) {
 
   let { data, error } = await read(SPLIT_COLUMNS_WITH_ROSTER_AND_RECEIPT);
   if (error && isMissingColumnError(error)) {
-    // Item 23's merchant_name / receipt_date are not in this database yet:
+    // The merchant_name / receipt_date columns are not in this database yet:
     // step down to the roster columns only.
     warnOnce(
       'read-receipt',
@@ -177,9 +175,9 @@ async function getSplit(id) {
 
 /**
  * Version-guarded write of a split's assignments AND its recomputed totals
- * (compare-and-swap; Item 21 Step 4 / R6). Applies only if the row is still
- * at `expectedVersion`, and bumps the version by one in the same statement,
- * so a caller that read a stale row changes nothing.
+ * (compare-and-swap). Applies only if the row is still at `expectedVersion`,
+ * and bumps the version by one in the same statement, so a caller that read a
+ * stale row changes nothing.
  *
  * The recompute (api/_lib/recompute.js's computeClaimTotals, itself a thin
  * wrapper over the shared api/_lib/totals.js arithmetic) runs just before
@@ -216,9 +214,9 @@ async function claimSplitItem(id, expectedVersion, assignments, items = [], paye
 }
 
 /**
- * Fire-and-forget insert into the anonymised analytics dataset (roadmap F7a).
- * Rows here MUST NOT carry a name, payment handle, or any reversible link
- * back to the `splits` row that produced them.
+ * Fire-and-forget insert into the anonymised analytics dataset. Rows here MUST
+ * NOT carry a name, payment handle, or any reversible link back to the `splits`
+ * row that produced them.
  *
  * @param {Array<{item_category: string, amount: number}>} rows
  */
@@ -233,28 +231,25 @@ async function insertAnalyticsRows(rows) {
   }
 }
 
-// ---- Item 10 Checkpoint 2, Step 7 --------------------------------------
+// ---- Account and sign-in data access ------------------------------------
 
 /**
  * Insert-or-detect-existing for the `accounts` table, keyed by the Supabase
- * auth user id (D11). Reports whether this call INSERTED a new row or
- * matched an existing one — POST /api/auth/verify-code needs that
- * distinction to decide whether the D15 terms-acceptance requirement
- * applies (first-time sign-in only; a returning user is never re-asked).
+ * auth user id. Reports whether this call INSERTED a new row or matched an
+ * existing one: POST /api/auth/verify-code needs that distinction to decide
+ * whether the terms-acceptance requirement applies (first-time sign-in only; a
+ * returning user is never re-asked).
  *
- * Implementation note on atomicity (read before changing this): plans
- * §10.3 describes the accounts insert and the (first-time-only)
- * terms_acceptances insert as happening "in the same transaction." A real
- * Postgres transaction spanning two separate table writes would need a
- * database function (an RPC) — that is a schema change, and Checkpoint 2's
- * brief is explicit that no schema SQL is to be written or run beyond what
- * was already needed. This function is deliberately just "insert, and
- * report which case it was" — api/auth/verify-code.js achieves the same
- * *observable* guarantee (no accounts row can be left behind with no
- * matching terms_acceptances row) with an explicit compensating rollback
- * (deleteOrphanedAccount, below) if the terms-acceptance insert fails.
- * Flagged for Alex: if true DB-level atomicity via an RPC is wanted later,
- * that is a schema addition and should be requested explicitly.
+ * Note on atomicity (read before changing this): the accounts insert and the
+ * (first-time-only) terms_acceptances insert are meant to happen "in the same
+ * transaction." A real Postgres transaction spanning two separate table writes
+ * would need a database function (an RPC), which is a schema change. This
+ * function is deliberately just "insert, and report which case it was";
+ * api/auth/verify-code.js achieves the same *observable* guarantee (no accounts
+ * row can be left behind with no matching terms_acceptances row) with an
+ * explicit compensating rollback (deleteOrphanedAccount, below) if the
+ * terms-acceptance insert fails. If true DB-level atomicity via an RPC is
+ * wanted later, that is a schema addition and should be requested explicitly.
  *
  * @param {string} id - the Supabase auth user id (session.user.id)
  * @returns {Promise<{account: {id: string, created_at: string}, inserted: boolean}>}
@@ -280,10 +275,10 @@ async function upsertAccount(id) {
 }
 
 /**
- * D15: write the timestamped, versioned terms-acceptance record. Called
- * ONLY when upsertAccount() reported `inserted: true` — a returning user is
- * never asked to re-accept, and this function does not itself check that;
- * the caller (api/auth/verify-code.js) enforces the "only on insert" rule.
+ * Write the timestamped, versioned terms-acceptance record. Called ONLY when
+ * upsertAccount() reported `inserted: true`: a returning user is never asked to
+ * re-accept, and this function does not itself check that; the caller
+ * (api/auth/verify-code.js) enforces the "only on insert" rule.
  *
  * @param {string} accountId
  * @param {string} termsVersion
@@ -299,18 +294,17 @@ async function recordTermsAcceptance(accountId, termsVersion) {
 }
 
 /**
- * Compensating rollback for D15's "an account must never exist with no
- * corresponding acceptance record" invariant — used only when
- * upsertAccount() just inserted a brand-new row and either the caller
- * declines/omits terms acceptance, or the subsequent recordTermsAcceptance
- * insert itself fails. NOT a general-purpose account-deletion feature —
- * Item 18 owns actual user-requested account deletion, separately and
- * later. This exists solely to undo THIS function's own just-made insert,
- * within the same request, before any cookie is ever set.
+ * Compensating rollback for the invariant "an account must never exist with no
+ * corresponding acceptance record". Used only when upsertAccount() just
+ * inserted a brand-new row and either the caller declines/omits terms
+ * acceptance, or the subsequent recordTermsAcceptance insert itself fails. NOT
+ * a general-purpose account-deletion feature: it exists solely to undo THIS
+ * function's own just-made insert, within the same request, before any cookie
+ * is ever set.
  *
- * Deliberately named distinctly from anything Item 18 will build, so a
- * future reader searching for "account deletion" does not find this and
- * mistake it for that feature.
+ * Deliberately named distinctly from any real account-deletion feature, so a
+ * future reader searching for "account deletion" does not find this and mistake
+ * it for that.
  *
  * @param {string} id
  */
@@ -321,10 +315,9 @@ async function deleteOrphanedAccount(id) {
 }
 
 /**
- * Tony's approved MVP1 "cheap half" (2026-10-10, relayed via coordinator,
- * bilang-pm-tracker.md v2.80 change-log): read back just the one column
- * GET /api/auth/session needs to decide whether a silent sync is due. No
- * banner, no email, no copy — the visible notification stays on backlog.
+ * Read back just the one column GET /api/auth/session needs to decide whether a
+ * silent sync is due. No banner, no email, no copy; the visible notification is
+ * a later item.
  *
  * @param {string} id
  * @returns {Promise<string|null>}

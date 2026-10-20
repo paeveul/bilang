@@ -1,12 +1,4 @@
-// api/_lib/auth.test.mjs — Item 10 Checkpoint 2, Step 6.
 //
-// Exercises the LOCAL JWT verification path (readSession / verifyAccessToken)
-// against a self-generated EC P-256 keypair standing in for Supabase's real
-// project signing key, with global.fetch mocked to serve that key's public
-// half as the project's JWKS document. No real Supabase project is reached
-// by this file — the real-inbox / real-session round trip (sendOtp,
-// verifyOtp, refreshSession against the live project) is exercised
-// separately per the Checkpoint 2 handback report, not here.
 //
 // Run: node --test api/_lib/auth.test.mjs
 
@@ -147,8 +139,6 @@ test('readSession: rejects a token missing the required aud claim', async () => 
   const result = await readSession(fakeReqWithCookie('bilang_at', token));
   assert.deepEqual(result, { needsRefresh: true });
 });
-
-// ---- D14: bearer-token transport ------------------------------------------
 
 test('readSession: D14 — accepts a token via Authorization: Bearer header when no cookie is present', async () => {
   const { readSession } = freshModule();

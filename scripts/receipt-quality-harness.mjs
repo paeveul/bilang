@@ -1,45 +1,12 @@
 #!/usr/bin/env node
 // scripts/receipt-quality-harness.mjs
 //
-// Item 17 Step 3 (bilang-mvp1-implementation-plans.md §17.4, §17.6). NOT a
-// unit test and NOT shipped to Vercel (Vercel only bundles /api as functions,
-// per vercel.json — nothing here is on that path). This is the fixture
-// harness that measures whether RECEIPT_TOOL's read_quality/unreadable_reason/
-// needs_check signal is actually honest, which only shows up against real
-// photographs — see the plan's own framing: "this is the item in MVP1 that
-// cannot be verified by reading a diff."
 //
-// It calls the real Anthropic API (ANTHROPIC_API_KEY from .env) once per
-// fixture image and costs real money — this is not something to run in CI
-// or on every commit. It exists to be run by hand, deliberately, against
-// Alex's ~40-photo fixture set (tracker Dashboard §0.2 row 12).
 //
 // Usage:
 //   node scripts/receipt-quality-harness.mjs --tier=1 [--dir=<path>] [--out=<path>]
 //
-//   --tier   1 | 2 | 3, see CALL_TIERS in api/_lib/anthropic.js (§17.7 Q2's
-//            cost ladder). Defaults to 1 (cheapest — today's config, just the
-//            reworded prompt). Run the ladder cheapest-first per the plan:
-//            only move to tier 2, then tier 3, if the current tier fails one
-//            of the two hard gates below.
-//   --dir    Fixture photo folder. Defaults to RECEIPT_FIXTURES_DIR in .env.
-//            This folder is NOT part of the repo (see README-receipt-quality-
-//            harness.md) — Bilang's privacy posture is that receipt images
-//            are never persisted, and that includes never committing fixture
-//            photos to git.
-//   --out    Output CSV path. Defaults to
-//            scripts/harness-output/tier-<n>-<timestamp>.csv (gitignored).
 //
-// Expected-verdict comparison (§17.6 "Alex adds an expected-verdict column
-// by hand once, and thereafter every run is a diff against it"): if
-// <fixture-dir>/expected.csv exists with columns `filename,band,expected_verdict`,
-// each run's CSV gets a `matches_expected` column, and the two hard gates
-// (§17.6's pass bar table) are checked and printed to the console:
-//   - 0 false "clear" verdicts on the `not_a_receipt` band
-//   - 0 false "unreadable" verdicts on the `clean` band
-// Without expected.csv, the harness still runs and writes the CSV — Alex
-// fills in the expected_verdict column of the first run's output by hand,
-// saves it as expected.csv in the fixture folder, and re-runs from there.
 
 import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -278,9 +245,6 @@ async function main() {
   }
 }
 
-// The two hard gates from §17.6's pass bar table. `band` values are whatever
-// Alex's expected.csv uses; only the two band names below are load-bearing
-// for a hard-gate fail. Every other band is reported, never gated (per plan).
 function printHardGates(results) {
   const notAReceipt = results.filter((r) => r.band === 'not_a_receipt');
   const clean = results.filter((r) => r.band === 'clean');

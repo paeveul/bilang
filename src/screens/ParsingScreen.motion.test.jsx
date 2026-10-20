@@ -1,23 +1,4 @@
-// src/screens/ParsingScreen.motion.test.jsx — Item 22 Step 9: the "Scan wait"
-// motion.dev placement (§22.3 of bilang-mvp1-implementation-plans.md).
 //
-// §22.3's constraint: "Must loop indefinitely with no implied percentage of
-// completion — the app cannot know how long Claude will take, and a
-// determinate progress bar would be a lie." What's verified here is the
-// STRUCTURAL contract that constraint implies, which is what's reliably
-// observable in jsdom without real requestAnimationFrame-driven timing:
-//   1. No progress/percentage semantics exist anywhere in the markup — no
-//      `role="progressbar"`, no `aria-valuenow`/`aria-valuemax`, no numeric
-//      percentage text. A determinate progress UI would show one of these;
-//      this screen must show none.
-//   2. The wait state IS communicated (role="status" + an accessible label),
-//      just not as a percentage.
-//   3. ParsingScreen.jsx's own animate/transition props are `{ rotate: 360 }`
-//      with `{ repeat: Infinity, ease: 'linear' }` — read directly from
-//      source below as a second, source-level confirmation alongside the
-//      DOM-level checks above (real elapsed-time animation smoothness is a
-//      visual concern verified manually in Step 11's Vercel-preview smoke
-//      test, not here).
 import '../test/jsdom-setup.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,11 +12,6 @@ test.afterEach(() => {
   cleanup();
 });
 
-// Item 24 Step 6: ParsingScreen now hosts the roster gate (RosterGate.jsx),
-// which reads/writes BillContext (payers, claimMode) and needs `goToScreen`
-// to auto-advance to Review — so it must render inside <BillProvider>, same
-// as every other creator-flow screen's own tests. Nothing about this
-// file's actual assertions (§22.3's no-progress-semantics contract) changes.
 test('no progress/percentage semantics anywhere in the rendered markup', () => {
   const { container } = render(
     <BillProvider>

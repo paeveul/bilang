@@ -1,29 +1,5 @@
-// src/App.jsx — Item 22 Steps 2, 5, 6, 7, 8: app shell.
 //
-// The internal screens (everything except the payer view) share one URL
-// ("/") today. This is now the confirmed final shape, not a placeholder —
-// see src/router.jsx's "ROUTING SHAPE — RESOLVED" note (Alex, 2026-09-14):
-// these screens stay session-only permanently; the credit-pack-picker and
-// account-settings screens will get their own real URLs when items 11 and
-// 18 build them, which this shell does not do.
 //
-// Steps 5-7 replaced ScreenStub with real content for every screen except
-// 'review'. Step 8 (this pass) finishes that: 'review' is now
-// ReviewScreen.jsx, the Round 2 correction-screen rebuild (§5.1/§5.1.1,
-// approved in full 2026-09-22, §22.7 Q1). Per that same day's scope
-// decision, ReviewScreen.jsx combines correction AND assignment into one
-// screen — 'assign' is retired as its own screen state and AssignScreen.jsx
-// (Step 7) is removed; its tick-list logic lives inside ReviewScreen.jsx
-// now. The landing→capture→review→payment→create→share path is walkable
-// end-to-end through the UI as of this pass.
-// Item 22 Step 9: `<MotionConfig reducedMotion="user">` is the "one line of
-// setup" §22.3 calls for — it reads the OS-level prefers-reduced-motion
-// media query itself and, when set, strips every motion/react animation
-// under it down to instant/opacity-only, globally, with no per-component
-// wiring required. Every motion.dev placement in this app (ParsingScreen's
-// scan-wait loop, ReviewScreen's layout animation, AnimatedMoney's spring,
-// the whileTap feedback) inherits this automatically because they're all
-// motion/react primitives mounted inside this provider.
 import { MotionConfig } from 'motion/react';
 import { RouterProvider, useRouter } from './router.jsx';
 import { BillProvider, useBillState } from './state/BillContext.jsx';
@@ -39,16 +15,12 @@ import ErrorScreen from './screens/ErrorScreen.jsx';
 import AuthScreen from './screens/AuthScreen.jsx';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 
-// Order matches index.html's existing data-screen sections, in document
-// order. 'assign' is kept here as a historical marker only (Step 7 built
-// it, Step 8 retired it as a distinct screen state — see this file's
-// header comment) — AppShell below no longer has a case for it.
 const SCREEN_NAMES = [
   'landing',
   'capture',
   'parsing',
   'review',
-  'assign', // retired 2026-09-22 — see header comment
+  'assign', // retired step, no longer part of the flow
   'payment',
   'creating',
   'share',
@@ -79,16 +51,6 @@ function AppShell() {
   }
 }
 
-// Item 10 Checkpoint 4 — the creator path's sign-in gate. Only mounted on the
-// creator route, so /s/<id> never reaches it (§10.3: the payer path gains no
-// auth check).
-//   - checking   -> a plain wait line while getSession() runs.
-//   - signed-out -> the full sign-in screen, showing the server's message if
-//                   the session check itself failed (an outage blocks everyone).
-//   - signed-in  -> the creator flow. If a request later reports
-//                   session_expired, the same sign-in form opens as an overlay
-//                   above the screen underneath, which stays mounted, so no
-//                   state is lost (Step 11).
 function CreatorGate() {
   const { phase, startupError, overlayOpen, markSignedIn } = useAuth();
 

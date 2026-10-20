@@ -1,8 +1,3 @@
-// src/screens/ReviewScreen.motion.test.jsx — Item 22 Step 9: the "Totals
-// recalculating" and "Review -> assignment transition" motion.dev
-// placements as they actually behave inside ReviewScreen.jsx (§22.3 of
-// bilang-mvp1-implementation-plans.md), plus the blur/confirm-snap wiring
-// that's specific to this screen (moneySnapTick).
 //
 // Uses the same Harness/BillProvider pattern as ReviewScreen.radix.test.jsx
 // — see that file's header comment for why a live DOM + real JSX transform
@@ -50,18 +45,6 @@ test.afterEach(() => {
 
 test('running totals render through AnimatedMoney and settle on the seeded single-payer total', async () => {
   renderReviewScreen();
-  // Single payer ('Me', the default), one item, equal split. The default
-  // assignment is applied by ReviewScreen's own `ensureItemDefaultAssignment`
-  // effect, one commit AFTER first paint — so AnimatedMoney's FIRST jump
-  // lands on RM0.00 (nothing assigned yet on the very first render), and
-  // the subsequent RM0.00 -> RM10.00 change is an ordinary "editing" change
-  // (no blur/confirm fired), which §22.3 says must ANIMATE, not snap. This
-  // is deliberately verified by awaiting the spring's real settle time
-  // (jsdom's requestAnimationFrame polyfill, from jsdom-setup.mjs's
-  // `pretendToBeVisual: true`, drives real timers) rather than asserting an
-  // immediate value — asserting immediately would either be flaky or would
-  // incorrectly demand the snap-on-mount behaviour this specific transition
-  // must NOT have.
   const runningTotalsHeading = screen.getByText('Running totals');
   const section = runningTotalsHeading.closest('div');
 
@@ -89,17 +72,6 @@ test('blur on a manual-mode amount field bumps the snap discipline — the remai
 });
 
 test('the Confirm button is confirmable and functionally unchanged with the default equal-split assignment', async () => {
-  // Behavioural half of the whileTap placement: confirms the interactive
-  // contract (button becomes enabled, click still navigates via
-  // handleConfirm) survived being wrapped in `motion.button`. The tap
-  // GESTURE itself (the visual `whileTap` scale-down) is a real-pointer
-  // interaction that framer-motion's gesture layer does not reliably fire
-  // from jsdom's synthetic `fireEvent.pointerDown` (confirmed by direct
-  // experiment while writing this test — no inline style change was
-  // observed even though the same wiring works in a real browser) — that
-  // half is covered by the source-level test immediately below, plus
-  // Step 11's manual Vercel-preview smoke test for the actual visual
-  // confirmation.
   const user = userEvent.setup();
   renderReviewScreen();
 

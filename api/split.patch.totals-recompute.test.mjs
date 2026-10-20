@@ -1,15 +1,4 @@
-// api/split.patch.totals-recompute.test.mjs — Item 21 Step 4 end to end,
-// through the REAL PATCH handler (api/split.js) and the REAL data-access
-// layer (api/_lib/supabase.js, including its REAL claimSplitItem recompute
-// wiring). Only the raw @supabase/supabase-js SDK is stubbed — this is the
-// seam every other layer of this codebase treats as the boundary of what it
-// owns (api/_lib/supabase.js's own docstring: "the ONLY file that imports
-// @supabase/supabase-js").
 //
-// This closes the exact gap Item 24 Step 8 flagged as accepted: a claim
-// changed `assignments` but the split's OWN STORED `totals` field did not
-// reflect it until Item 21 Step 4 landed. Everything here reads `totals`
-// back off the (fake) database row, never off a client-side preview.
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
