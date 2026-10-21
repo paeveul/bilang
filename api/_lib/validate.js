@@ -5,6 +5,7 @@
 // handling beyond a simple size cap are later scope, not built here.
 
 const crypto = require('crypto');
+const { nameKey, hasHiddenChars } = require('./name-rule');
 
 const MAX_IMAGE_BASE64_CHARS = 8_000_000; // ~6MB raw image, generous for a phone photo
 const MAX_ITEMS = 100;
@@ -42,29 +43,41 @@ function generateSplitId() {
   return id;
 }
 
+const PAYERS_LIST_INVALID = 'Invalid payers list';
+const PAYERS_DUPLICATE = 'Two people have the same name.';
+const PAYERS_HIDDEN_CHARS = 'A name has hidden characters. Retype it.';
+
 /**
- * A roster is a non-empty array of at most MAX_PAYERS names. Each name is 1-20
- * characters once trimmed, and no two names match case-insensitively (after
- * trimming). Names are checked, never rewritten, so they keep matching the
- * keys the client used in `assignments`.
+ * The reason a roster is not acceptable, or null if it is. A roster is a
+ * non-empty array of at most MAX_PAYERS names. Each name is 1-20 characters
+ * once trimmed, holds no hidden characters, and no two names are the same by
+ * the shared rule in ./name-rule (case, extra spaces, full-width and
+ * accent variants, hidden characters). Names are checked, never rewritten, so
+ * they keep matching the keys the client used in `assignments`.
  */
-function isValidPayersList(payers) {
-  if (!Array.isArray(payers) || payers.length === 0 || payers.length > MAX_PAYERS) return false;
+function payersListError(payers) {
+  if (!Array.isArray(payers) || payers.length === 0 || payers.length > MAX_PAYERS) return PAYERS_LIST_INVALID;
   const seen = new Set();
+  let duplicate = false;
   for (const name of payers) {
-    if (typeof name !== 'string') return false;
+    if (typeof name !== 'string') return PAYERS_LIST_INVALID;
+    if (hasHiddenChars(name)) return PAYERS_HIDDEN_CHARS;
     const trimmed = name.trim();
-    if (trimmed.length === 0 || trimmed.length > MAX_PAYER_NAME_LEN) return false;
-    const key = trimmed.toLowerCase();
-    if (RESERVED_NAME_KEYS.has(key)) return false;
-    if (seen.has(key)) return false;
+    if (trimmed.length === 0 || trimmed.length > MAX_PAYER_NAME_LEN) return PAYERS_LIST_INVALID;
+    const key = nameKey(name);
+    if (RESERVED_NAME_KEYS.has(key)) return PAYERS_LIST_INVALID;
+    if (seen.has(key)) duplicate = true;
     seen.add(key);
   }
-  return true;
+  return duplicate ? PAYERS_DUPLICATE : null;
+}
+
+function isValidPayersList(payers) {
+  return payersListError(payers) === null;
 }
 
 function isReservedNameKey(name) {
-  return typeof name === 'string' && RESERVED_NAME_KEYS.has(name.trim().toLowerCase());
+  return typeof name === 'string' && RESERVED_NAME_KEYS.has(nameKey(name));
 }
 
 /**
@@ -75,9 +88,9 @@ function isReservedNameKey(name) {
  */
 function resolveRosterName(roster, name) {
   if (!Array.isArray(roster) || typeof name !== 'string') return null;
-  const key = name.trim().toLowerCase();
+  const key = nameKey(name);
   for (const rosterName of roster) {
-    if (typeof rosterName === 'string' && rosterName.trim().toLowerCase() === key) return rosterName;
+    if (typeof rosterName === 'string' && nameKey(rosterName) === key) return rosterName;
   }
   return null;
 }
@@ -131,7 +144,7 @@ function validateClaimRequest(body, split = null) {
   }
 
   const named = [body.payer, ...(body.sharedWith || [])];
-  const keys = new Set(named.map((n) => n.trim().toLowerCase()));
+  const keys = new Set(named.map((n) => nameKey(n)));
   if (keys.size !== named.length) {
     return 'Duplicate names in claim';
   }
@@ -202,9 +215,8 @@ function validateSplitCreateRequest(body) {
     return 'Missing or invalid totals';
   }
   if (body.payers !== undefined) {
-    if (!isValidPayersList(body.payers)) {
-      return 'Invalid payers list';
-    }
+    const payersError = payersListError(body.payers);
+    if (payersError) return payersError;
   }
   // merchantName and receiptDate are both genuinely optional (undefined = "no
   // opinion", null = "read but illegible"), round-tripped from whatever
@@ -349,6 +361,7 @@ module.exports = {
   validateSplitCreateRequest,
   validateParsedReceipt,
   isValidPayersList,
+  payersListError,
   validateClaimRequest,
   resolveRosterName,
   isReservedNameKey,

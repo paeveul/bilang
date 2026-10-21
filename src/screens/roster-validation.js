@@ -1,6 +1,11 @@
+import { cleanName, nameKey, stripHiddenChars } from '../../api/_lib/name-rule.js';
+
 export const MAX_NAME_LEN = 20;
 
-const isBlank = (name) => typeof name !== 'string' || name.trim().length === 0;
+// Same rule the server uses, so a name that passes here passes there.
+export { cleanName, nameKey, stripHiddenChars };
+
+const isBlank = (name) => typeof name !== 'string' || cleanName(name).length === 0;
 
 /**
  * @param {string[]} payers - roster names in gate-row order; index 0 is the
@@ -10,6 +15,7 @@ const isBlank = (name) => typeof name !== 'string' || name.trim().length === 0;
  *   blankIndices: number[],
  *   tooLongIndices: number[],
  *   duplicateIndices: number[],
+ *   clashOnlyIndices: number[],
  *   valid: boolean,
  *   summaryMessage: string,
  *   messageFor: (index: number) => string|null,
@@ -20,7 +26,7 @@ export function validateRoster(payers) {
   const hostNameBlank = !solo && isBlank(payers[0]);
   const blankIndices = [];
   const tooLongIndices = [];
-  const seen = new Map(); // lowercased trimmed name -> first index seen
+  const seen = new Map(); // comparison key (see name-rule.js) -> first index seen
   const duplicateIndices = [];
 
   payers.forEach((name, index) => {
@@ -29,9 +35,8 @@ export function validateRoster(payers) {
       if (index !== 0) blankIndices.push(index); // index 0's own message is hostNameBlank
       return;
     }
-    const trimmed = name.trim();
-    if (trimmed.length > MAX_NAME_LEN) tooLongIndices.push(index);
-    const key = trimmed.toLowerCase();
+    if (cleanName(name).length > MAX_NAME_LEN) tooLongIndices.push(index);
+    const key = nameKey(name);
     if (seen.has(key)) {
       duplicateIndices.push(index);
       duplicateIndices.push(seen.get(key)); // both rows are marked
@@ -48,7 +53,7 @@ export function validateRoster(payers) {
     if (blankIndices.includes(index)) return `Add a name for person ${index + 1}.`;
     if (tooLongIndices.includes(index)) return 'Keep names to 20 characters or fewer.';
     if (duplicateIndices.includes(index)) {
-      const name = (payers[index] || '').trim();
+      const name = cleanName(payers[index] || '');
       return `Two people are called '${name}'. Give each a different name.`;
     }
     return null;
@@ -59,6 +64,10 @@ export function validateRoster(payers) {
     blankIndices,
     tooLongIndices,
     duplicateIndices: [...new Set(duplicateIndices)].sort((a, b) => a - b),
+    // Rows whose only problem is sharing a name (safe to flag early).
+    clashOnlyIndices: [...new Set(duplicateIndices)]
+      .filter((i) => !blankIndices.includes(i) && !tooLongIndices.includes(i))
+      .sort((a, b) => a - b),
     valid,
     summaryMessage: 'Fix the names above to continue.',
     messageFor,
@@ -71,9 +80,9 @@ export function validateRoster(payers) {
  * host has renamed someone to a default-looking name.
  */
 export function nextPersonLabel(existing, fromNumber) {
-  const taken = new Set(existing);
+  const taken = new Set(existing.map(nameKey));
   let n = fromNumber;
-  while (taken.has(`Person ${n}`)) n += 1;
+  while (taken.has(nameKey(`Person ${n}`))) n += 1;
   return `Person ${n}`;
 }
 
@@ -85,7 +94,7 @@ export function nextPersonLabel(existing, fromNumber) {
 export function summarizeRoster(payers) {
   const shown = payers.slice(0, 3).map((name, index) => {
     if (index === 0) return 'You';
-    const trimmed = typeof name === 'string' ? name.trim() : '';
+    const trimmed = typeof name === 'string' ? cleanName(name) : '';
     return trimmed.length === 0 ? '(no name)' : trimmed;
   });
   const extra = payers.length - shown.length;

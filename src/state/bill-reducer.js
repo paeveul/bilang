@@ -1,4 +1,5 @@
 import { centsToPercent, fromCents } from '../../js/totals.js';
+import { sameName } from '../../api/_lib/name-rule.js';
 
 export const initialState = {
   screen: 'landing',
@@ -83,7 +84,7 @@ function fillUnallocatedWithDefault(state) {
 
 // Simultaneous rename of assignment keys ({from: to, ...}) so swapped names
 // cannot collide with each other part-way through.
-function rekeyAssignments(assignments, map) {
+export function rekeyAssignments(assignments, map) {
   const rename = (name) => (hasOwn(map, name) ? map[name] : name);
   const next = {};
   Object.keys(assignments).forEach((itemId) => {
@@ -159,7 +160,7 @@ export function reducer(state, action) {
     }
     case 'ADD_PAYER': {
       const keys = assignmentKeys(state);
-      if (!action.name || state.payers.includes(action.name) || keys.includes(action.name)) return state;
+      if (!action.name || state.payers.some((p) => sameName(p, action.name)) || keys.includes(action.name)) return state;
       const payers = [...state.payers, action.name];
       if (state.claimMode !== 'host') return { ...state, payers };
       // Host assigns: the new person joins every item still on the default

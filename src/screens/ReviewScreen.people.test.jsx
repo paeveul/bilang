@@ -25,13 +25,14 @@ const BILL = {
 
 // withPayment: also mount the real PaymentScreen (inside the real AuthProvider,
 // with the network stubbed) so a test can go forward to it and Back.
-function renderReview({ extraPeople = [], claimMode = 'host', withPayment = false } = {}) {
+function renderReview({ extraPeople = [], renames = [], claimMode = 'host', withPayment = false } = {}) {
   function Harness() {
-    const { setParsed, addPayer, setClaimMode } = useBillActions();
+    const { setParsed, addPayer, renamePayer, setClaimMode } = useBillActions();
     const { screen: current, payers } = useBillState();
     useEffect(() => {
       if (claimMode !== 'host') setClaimMode(claimMode);
       extraPeople.forEach((name) => addPayer(name));
+      renames.forEach(([index, name]) => renamePayer(index, name)); // lets a test seed a name clash
       setParsed(BILL);
       // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once
     }, []);
@@ -363,7 +364,7 @@ test('no per-row Remove control: removal is by the stepper only (last person)', 
 
 test('AC-8: Confirm with the editor closed and an invalid roster opens it, shows the message and focuses the first bad name', async () => {
   const user = userEvent.setup();
-  renderReview({ extraPeople: ['Ben', 'ben'] });
+  renderReview({ extraPeople: ['Ben', 'Cy'], renames: [[2, 'ben']] });
   assert.equal(trigger().getAttribute('aria-expanded'), 'false');
   assert.equal(screen.queryByText("Two people are called 'Ben'. Give each a different name."), null);
   await user.click(confirm());

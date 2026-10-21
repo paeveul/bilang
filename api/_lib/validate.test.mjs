@@ -140,13 +140,20 @@ test('validateSplitCreateRequest: accepts a valid payers list', () => {
 });
 
 test('validateSplitCreateRequest: rejects invalid payers', () => {
-  for (const payers of ['Alex', [], ['Alex', ''], ['Alex', 'Alex'], ['Alex', 1], [null], {}, null]) {
+  for (const payers of ['Alex', [], ['Alex', ''], ['Alex', 1], [null], {}, null]) {
     assert.equal(
       validateSplitCreateRequest(validSplitBody({ payers })),
       'Invalid payers list',
       JSON.stringify(payers)
     );
   }
+});
+
+test('payers: an exact duplicate says so in plain words', () => {
+  assert.equal(
+    validateSplitCreateRequest(validSplitBody({ payers: ['Alex', 'Alex'] })),
+    'Two people have the same name.'
+  );
 });
 
 test('payers: names are trimmed, 1-20 characters', () => {
@@ -162,8 +169,8 @@ test('payers: names are trimmed, 1-20 characters', () => {
 
 test('payers: unique case-insensitively, after trimming', () => {
   const bad = (payers) => validateSplitCreateRequest(validSplitBody({ payers }));
-  assert.equal(bad(['Alex', 'alex']), 'Invalid payers list');
-  assert.equal(bad(['Alex', ' ALEX ']), 'Invalid payers list');
+  assert.equal(bad(['Alex', 'alex']), 'Two people have the same name.');
+  assert.equal(bad(['Alex', ' ALEX ']), 'Two people have the same name.');
   assert.equal(bad(['Alex', 'Alexa']), null);
 });
 
@@ -371,4 +378,45 @@ test('validateOtpVerify: termsAccepted=false is a valid SHAPE (presence/required
     validateOtpVerify({ email: 'someone@example.com', code: '123456', termsAccepted: false, termsVersion: '2026-09-23' }),
     null
   );
+});
+
+test('payers: look-alike duplicates are rejected with the plain message (inner spaces, full-width, accents, tabs)', () => {
+  const bad = (payers) => validateSplitCreateRequest(validSplitBody({ payers }));
+  const SAME = 'Two people have the same name.';
+  assert.equal(bad(['Ben  Tan', 'Ben Tan']), SAME);
+  assert.equal(bad(['Ben Tan', ' ben   TAN ']), SAME);
+  assert.equal(bad(['Ben', 'Ｂｅｎ']), SAME); // full-width B e n
+  assert.equal(bad(['Bén', 'Bén']), SAME); // accent typed two ways
+  assert.equal(bad(['Ben', 'Ben ']), SAME); // no-break space
+  assert.equal(bad(['Ben Tan', 'Ben	Tan']), SAME);
+});
+
+test('payers: names with hidden characters are rejected with a plain message', () => {
+  const bad = (payers) => validateSplitCreateRequest(validSplitBody({ payers }));
+  const HIDDEN = 'A name has hidden characters. Retype it.';
+  assert.equal(bad(['Ben​', 'Bea']), HIDDEN);
+  assert.equal(bad(['Ben', 'Be‍a']), HIDDEN);
+  assert.equal(bad(['﻿Ben', 'Bea']), HIDDEN);
+  assert.equal(bad(['Ben', 'Bea']), HIDDEN);
+  assert.equal(bad(['Ben', 'Bea‮']), HIDDEN);
+});
+
+test('payers: a hidden character cannot be used to dodge the duplicate check', () => {
+  const bad = (payers) => validateSplitCreateRequest(validSplitBody({ payers }));
+  assert.notEqual(bad(['Ben', 'Ben​']), null);
+});
+
+test('payers: look-alike letters from another alphabet are NOT treated as duplicates (accepted residual risk)', () => {
+  const ok = (payers) => validateSplitCreateRequest(validSplitBody({ payers }));
+  assert.equal(ok(['Ben', 'Bеn']), null); // Cyrillic small e
+});
+
+test('resolveRosterName: matches by the shared rule (inner spaces, full-width)', () => {
+  assert.equal(resolveRosterName(['Ben Tan', 'Bea'], 'ben   tan'), 'Ben Tan');
+  assert.equal(resolveRosterName(['Ben', 'Bea'], 'Ｂｅｎ'), 'Ben');
+});
+
+test('claim: two names that match by the shared rule count as a duplicate inside one claim', () => {
+  const body = { action: 'claim', itemId: 'i1', payer: 'Bea', sharedWith: ['bea  '] };
+  assert.equal(validateClaimRequest(body), 'Duplicate names in claim');
 });

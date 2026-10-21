@@ -12,7 +12,7 @@ import {
   hasHandAssignedItems,
   isDefaultAssignment,
 } from '../state/bill-reducer.js';
-import { nextPersonLabel, validateRoster } from './roster-validation.js';
+import { nextPersonLabel, stripHiddenChars, validateRoster } from './roster-validation.js';
 
 const TAP_SCALE = { scale: 0.97 };
 const TAP_TRANSITION = { duration: 0.1 };
@@ -34,14 +34,29 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
   const promptRef = useRef(null);
   const [pendingSwitch, setPendingSwitch] = useState(false);
   const [note, setNote] = useState('');
+  // A shared name is flagged once the host leaves a box or taps the stepper,
+  // never on every keystroke. It clears itself as soon as the clash is gone.
+  const [clashRevealed, setClashRevealed] = useState(false);
   const confirmVisible = pendingSwitch && !solo && claimMode === 'host';
 
   useEffect(() => {
     if (confirmVisible) promptRef.current?.focus();
   }, [confirmVisible]);
 
+  useEffect(() => {
+    if (validation.duplicateIndices.length === 0 && clashRevealed) setClashRevealed(false);
+  }, [validation.duplicateIndices.length, clashRevealed]);
+
   function touch() {
     if (onTouch) onTouch();
+  }
+
+  function handleNameBlur(index, value) {
+    // Hidden characters (zero-width, control) are removed on leaving the box;
+    // everything else the host typed is left exactly as it is.
+    const stripped = stripHiddenChars(value);
+    if (stripped !== value) renamePayer(index, stripped);
+    setClashRevealed(true);
   }
 
   function focusOption(mode) {
@@ -51,6 +66,7 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
 
   function handlePeopleChange(nextCount) {
     touch();
+    setClashRevealed(true);
     const count = Math.max(1, nextCount);
     if (count === payers.length) return;
 
@@ -140,7 +156,10 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
       {!solo && (
         <div className="space-y-2" data-testid="name-rows">
           {payers.map((name, index) => {
-            const message = showErrors ? validation.messageFor(index) : null;
+            const message =
+              showErrors || (clashRevealed && validation.clashOnlyIndices.includes(index))
+                ? validation.messageFor(index)
+                : null;
             return (
               <div key={index} className="space-y-1">
                 <input
@@ -149,6 +168,7 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
                   maxLength={20}
                   placeholder={index === 0 ? undefined : `Person ${index + 1}`}
                   onChange={(e) => renamePayer(index, e.target.value)}
+                  onBlur={(e) => handleNameBlur(index, e.target.value)}
                   aria-label={index === 0 ? 'Your name' : `Name for person ${index + 1}`}
                   aria-invalid={message ? true : undefined}
                   aria-describedby={message ? `roster-row-${index}-error` : undefined}

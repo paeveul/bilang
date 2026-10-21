@@ -71,3 +71,56 @@ test('nextPersonLabel skips default-looking names already in use', () => {
   assert.equal(nextPersonLabel(['Me', 'Person 2'], 3), 'Person 3');
   assert.equal(nextPersonLabel(['Me', 'Person 3'], 3), 'Person 4');
 });
+
+test('duplicate names: extra spaces inside, full-width letters and accents are caught (D2)', () => {
+  assert.deepEqual(validateRoster(['Farah', 'Ben  Tan', 'Ben Tan']).duplicateIndices, [1, 2]);
+  assert.deepEqual(validateRoster(['Farah', '\uFF22en', 'Ben']).duplicateIndices, [1, 2]);
+  assert.deepEqual(validateRoster(['Farah', 'B\u00e9n', 'Be\u0301n']).duplicateIndices, [1, 2]);
+});
+
+test('duplicate names: a hidden character does not hide a clash (D2, ED-5)', () => {
+  const r = validateRoster(['Farah', 'Ben', 'Ben\u200b']);
+  assert.equal(r.valid, false);
+  assert.deepEqual(r.duplicateIndices, [1, 2]);
+  assert.equal(r.messageFor(2), "Two people are called 'Ben'. Give each a different name.");
+});
+
+test('duplicate names: only the clashing rows are marked (ED-2), all three when all match (ED-3)', () => {
+  assert.deepEqual(validateRoster(['Farah', 'Ben', 'ben']).duplicateIndices, [1, 2]);
+  assert.equal(validateRoster(['Farah', 'Ben', 'ben']).messageFor(0), null);
+  assert.deepEqual(validateRoster(['Ben', 'ben', 'BEN']).duplicateIndices, [0, 1, 2]);
+});
+
+test('solo "Me" then another person called "me" is a clash (ED-6)', () => {
+  assert.deepEqual(validateRoster(['Me', 'me']).duplicateIndices, [0, 1]);
+});
+
+test('the host name counts like any other row for a clash', () => {
+  assert.deepEqual(validateRoster(['Ben', 'Ana', ' BEN ']).duplicateIndices, [0, 2]);
+});
+
+test('too-long and blank rows take the message before a clash (D12, ED-7)', () => {
+  const r = validateRoster(['Farah', 'x'.repeat(21), 'X'.repeat(21)]);
+  assert.deepEqual(r.tooLongIndices, [1, 2]);
+  assert.deepEqual(r.clashOnlyIndices, []);
+  assert.equal(r.messageFor(1), 'Keep names to 20 characters or fewer.');
+  const blank = validateRoster(['Farah', ' ', '\u200b']);
+  assert.deepEqual(blank.blankIndices, [1, 2]);
+  assert.equal(blank.valid, false);
+});
+
+test('clashOnlyIndices lists the rows whose only problem is the shared name', () => {
+  assert.deepEqual(validateRoster(['Farah', 'Ben', 'ben']).clashOnlyIndices, [1, 2]);
+});
+
+test('one person only: nothing is checked (D13)', () => {
+  assert.equal(validateRoster(['Ben']).valid, true);
+  assert.equal(validateRoster(['']).valid, true);
+});
+
+test('nextPersonLabel avoids case, space and look-alike clashes (D8)', () => {
+  assert.equal(nextPersonLabel(['Me', 'person 3'], 3), 'Person 4');
+  assert.equal(nextPersonLabel(['Me', 'PERSON  3'], 3), 'Person 4');
+  assert.equal(nextPersonLabel(['Me', 'Person\u200b 3'], 3), 'Person 4');
+  assert.equal(nextPersonLabel(['Me', '\uFF30erson 3'], 3), 'Person 4');
+});

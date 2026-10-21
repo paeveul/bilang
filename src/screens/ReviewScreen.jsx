@@ -166,7 +166,14 @@ export default function ReviewScreen() {
   const problemsById = new Map(itemProblems.map((p) => [p.itemId, p.problems]));
   // A roster problem does not disable Confirm either: tapping it opens the
   // People panel, shows the messages and focuses the first bad name.
-  const rosterValid = validateRoster(payers).valid;
+  const rosterCheck = validateRoster(payers);
+  const rosterValid = rosterCheck.valid;
+  // While two people share a name, their per-item controls (and the item-wide
+  // mode switches) stay off, so nothing can attach to the wrong person.
+  const clashRows = new Set(rosterCheck.duplicateIndices);
+  const hasClash = clashRows.size > 0;
+  const onlyClash =
+    hasClash && !rosterCheck.hostNameBlank && rosterCheck.blankIndices.length === 0 && rosterCheck.tooLongIndices.length === 0;
   const readyExceptRoster = items.length > 0 && unresolvedCount === 0;
   const canConfirm = readyExceptRoster && rosterValid;
 
@@ -437,9 +444,15 @@ export default function ReviewScreen() {
                       Remove item
                     </button>
 
+                    {hasClash && (
+                      <p className="text-sm text-slate-600" data-testid="name-clash-note">
+                        Fix the matching names first.
+                      </p>
+                    )}
                     <ToggleGroup.Root
                       type="single"
                       value={mode}
+                      disabled={hasClash}
                       onValueChange={(next) => {
                         if (next) setItemMode(item.id, next);
                       }}
@@ -507,6 +520,7 @@ export default function ReviewScreen() {
                       <ToggleGroup.Root
                         type="single"
                         value={unit}
+                        disabled={hasClash}
                         onValueChange={(next) => {
                           if (next) setItemManualUnit(item.id, next, item.line_total);
                         }}
@@ -528,7 +542,8 @@ export default function ReviewScreen() {
                     )}
 
                     <div className="space-y-2 text-sm">
-                      {payers.map((name) => {
+                      {payers.map((name, personIndex) => {
+                        const rowLocked = clashRows.has(personIndex);
                         const isTicked = ticked.includes(name);
                         const value =
                           mode === 'manual' && assignment && !Array.isArray(assignment)
@@ -536,7 +551,7 @@ export default function ReviewScreen() {
                             : undefined;
                         return (
                           <motion.div
-                            key={name}
+                            key={personIndex}
                             whileTap={TAP_SCALE}
                             transition={TAP_TRANSITION}
                             className="flex items-center gap-2 min-h-[48px]"
@@ -544,6 +559,7 @@ export default function ReviewScreen() {
                             <input
                               type="checkbox"
                               checked={isTicked}
+                              disabled={rowLocked}
                               onChange={(e) => setItemAssignment(item.id, name, e.target.checked)}
                               className="h-5 w-5"
                               aria-label={`Include ${name}`}
@@ -557,6 +573,7 @@ export default function ReviewScreen() {
                                 value={value?.text ?? ''}
                                 onChange={(e) => handleManualValueChange(item, name, e.target.value)}
                                 onBlur={handleManualValueBlur}
+                                disabled={rowLocked}
                                 placeholder={unit === '%' ? '0' : '0.00'}
                                 className="w-20 rounded-md border-slate-300 text-sm text-right tabular-nums min-h-[48px]"
                                 aria-label={`${name}'s ${unit === '%' ? 'percentage' : 'amount'} for ${item.name || 'this item'}`}
@@ -634,8 +651,8 @@ export default function ReviewScreen() {
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
         <h3 className="font-semibold text-sm text-slate-700">Running totals</h3>
         <div className="text-sm space-y-1">
-          {payers.map((name) => (
-            <div key={name} className="flex justify-between">
+          {payers.map((name, personIndex) => (
+            <div key={personIndex} className="flex justify-between">
               <span>{name}</span>
               <AnimatedMoney
                 className="font-semibold"
@@ -692,7 +709,7 @@ export default function ReviewScreen() {
       </motion.button>
       {!rosterValid && (
         <p className="text-sm text-slate-600 text-center" data-testid="roster-block-reason">
-          Finish the people list first.
+          {onlyClash ? 'Two people have the same name.' : 'Finish the people list first.'}
         </p>
       )}
     </section>

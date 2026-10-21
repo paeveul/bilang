@@ -89,7 +89,7 @@ test('source-level: whileTap feedback is wired on the Confirm button, "+ Add mis
     /<Accordion\.Trigger asChild>[\s\S]{0,120}<motion\.button[\s\S]{0,80}whileTap=\{TAP_SCALE\}/, // per-item accordion trigger
     /<ToggleGroup\.Item value="equal" asChild>[\s\S]{0,80}<motion\.button[\s\S]{0,80}whileTap=\{TAP_SCALE\}/, // Equal split
     /<ToggleGroup\.Item value="manual" asChild>[\s\S]{0,80}<motion\.button[\s\S]{0,80}whileTap=\{TAP_SCALE\}/, // Set amounts
-    /<motion\.div[\s\S]{0,40}key=\{name\}[\s\S]{0,80}whileTap=\{TAP_SCALE\}/, // payer tick-row
+    /<motion\.div[\s\S]{0,40}key=\{personIndex\}[\s\S]{0,80}whileTap=\{TAP_SCALE\}/, // payer tick-row
   ];
   for (const pattern of tapSites) {
     assert.match(SOURCE, pattern, `expected a whileTap wiring matching ${pattern}`);

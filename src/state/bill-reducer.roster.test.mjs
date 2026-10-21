@@ -334,3 +334,12 @@ test('RESET clears the stored-name map along with the roster', () => {
   assert.deepEqual(reset.nameKeyByIndex, {});
   assert.deepEqual(reset.payers, ['Me']);
 });
+
+test('D8/D2: ADD_PAYER refuses a name that matches an existing person by the shared rule', () => {
+  const base = { ...initialState, payers: ['Me', 'Ben Tan'] };
+  for (const name of ['ben tan', 'Ben  Tan', ' BEN TAN ', '\uFF22en Tan', 'Ben\u200b Tan']) {
+    const next = reducer(base, { type: 'ADD_PAYER', name });
+    assert.deepEqual(next.payers, ['Me', 'Ben Tan'], JSON.stringify(name));
+  }
+  assert.deepEqual(reducer(base, { type: 'ADD_PAYER', name: 'Bea' }).payers, ['Me', 'Ben Tan', 'Bea']);
+});

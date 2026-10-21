@@ -136,3 +136,20 @@ test('manual split: POST body is non-zero, keeps the state shape, and the server
   assert.equal(r.mismatch, null);
   assert.deepEqual(r.totals.per_person, body.totals.per_person);
 });
+
+test('D9: names are sent trimmed, single-spaced and without hidden characters; assignments follow', () => {
+  const body = buildSplitPayload({
+    parsed,
+    payers: ['  Ali  ', 'Bea\u200b  Tan'],
+    assignments: { i1: ['  Ali  ', 'Bea\u200b  Tan'], i2: ['Bea\u200b  Tan'] },
+    ownerPaymentHandle: 'x',
+  });
+  assert.deepEqual(body.payers, ['Ali', 'Bea Tan']);
+  assert.deepEqual(body.assignments, { i1: ['Ali', 'Bea Tan'], i2: ['Bea Tan'] });
+  assert.deepEqual(Object.keys(body.totals.per_person), ['Ali', 'Bea Tan']);
+});
+
+test('D9: names that were already clean leave the assignments untouched', () => {
+  const body = buildSplitPayload({ parsed, payers: ['Ali', 'Bea'], assignments, ownerPaymentHandle: 'x' });
+  assert.equal(body.assignments, assignments);
+});

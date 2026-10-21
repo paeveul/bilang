@@ -340,3 +340,19 @@ test('split POST: format refusals (wrong and missing Content-Type) return byte-i
   assert.equal(formUrlEncoded.raw, GENERIC_400_RAW);
   assert.equal(missingType.raw, GENERIC_400_RAW);
 });
+
+test('split POST: a duplicate roster returns 400 with the plain message, nothing stored', async () => {
+  for (const payers of [['Ali', 'ALI'], ['Ben  Tan', 'Ben Tan'], ['Ben', 'Ｂｅｎ']]) {
+    const { res } = await post(postBody({ payers }));
+    assert.equal(res.statusCode, 400, JSON.stringify(payers));
+    assert.deepEqual(res.body, { error: 'Two people have the same name.' });
+  }
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: a roster with a hidden character returns 400 with a plain message, nothing stored', async () => {
+  const { res } = await post(postBody({ payers: ['Ali', 'Bea​'] }));
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'A name has hidden characters. Retype it.' });
+  assert.equal(stored.length, 0);
+});
