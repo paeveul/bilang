@@ -25,7 +25,7 @@ const BILL = {
   grand_total: 8,
 };
 
-const CLASH = (name) => `Two people are called '${name}'. Give each a different name.`;
+const CLASH = () => 'Two people have the same name. Change one.';
 
 test.afterEach(() => cleanup());
 
@@ -75,7 +75,7 @@ test('D3: while typing a clashing name nothing is flagged and the text stays exa
   await user.click(nameBox(2));
   await user.type(nameBox(2), 'n'); // "Ben" now clashes, box 2 still has focus
   assert.equal(nameBox(2).value, 'Ben');
-  assert.equal(screen.queryByText(CLASH('Ben')), null, 'no message mid-typing');
+  assert.equal(screen.queryByText(CLASH()), null, 'no message mid-typing');
   assert.equal(nameBox(2).getAttribute('aria-invalid'), null);
 });
 
@@ -83,7 +83,7 @@ test('D4/D5: leaving the box flags BOTH boxes; fixing it clears both at once', a
   const user = userEvent.setup();
   await gateWithTwo(user, 'Ben', 'ben');
   await user.tab(); // leave box 2
-  assert.equal(screen.getAllByText(CLASH('ben')).length + screen.getAllByText(CLASH('Ben')).length, 2);
+  assert.equal(screen.getAllByText(CLASH()).length, 2);
   assert.equal(nameBox(1).getAttribute('aria-invalid'), 'true');
   assert.equal(nameBox(2).getAttribute('aria-invalid'), 'true');
   assert.ok(nameBox(1).getAttribute('aria-describedby'));
@@ -94,15 +94,15 @@ test('D4/D5: leaving the box flags BOTH boxes; fixing it clears both at once', a
   await user.type(nameBox(2), 'Bea');
   assert.equal(nameBox(1).getAttribute('aria-invalid'), null);
   assert.equal(nameBox(2).getAttribute('aria-invalid'), null);
-  assert.equal(screen.queryByText(/Two people are called/), null);
+  assert.equal(screen.queryByText(/^Two people have the same name\. Change one\.$/), null);
 });
 
 test('D4: tapping the stepper also flags the clash', async () => {
   const user = userEvent.setup();
   await gateWithTwo(user, 'Ben', 'Ben');
-  assert.equal(screen.queryByText(CLASH('Ben')), null, 'still typing in box 2: nothing yet');
+  assert.equal(screen.queryByText(CLASH()), null, 'still typing in box 2: nothing yet');
   await user.click(screen.getByLabelText('More people'));
-  assert.equal(screen.getAllByText(CLASH('Ben')).length, 2);
+  assert.equal(screen.getAllByText(CLASH()).length, 2);
 });
 
 test('D1: Continue is blocked while two names clash, for every look-alike form, and nothing moves on', async () => {
@@ -143,7 +143,7 @@ test('D11/ED-5: a hidden character is removed on leaving the box, then it counts
   await user.type(nameBox(2), 'Ben​');
   await user.tab();
   assert.equal(nameBox(2).value, 'Ben', 'hidden character stripped');
-  assert.equal(screen.getAllByText(CLASH('Ben')).length, 2);
+  assert.equal(screen.getAllByText(CLASH()).length, 2);
 });
 
 test('ED-2/ED-3: only the clashing boxes are marked; all three when all match', async () => {
@@ -169,9 +169,9 @@ test('ED-4: removing one of the clashing people clears the clash', async () => {
   await user.clear(nameBox(3));
   await user.type(nameBox(3), 'Ben');
   await user.tab();
-  assert.equal(screen.getAllByText(CLASH('Ben')).length, 2);
+  assert.equal(screen.getAllByText(CLASH()).length, 2);
   await user.click(screen.getByLabelText('Fewer people'));
-  assert.equal(screen.queryByText(/Two people are called/), null);
+  assert.equal(screen.queryByText(/^Two people have the same name\. Change one\.$/), null);
   assert.deepEqual(gatePayers(), ['Ana', 'Ben']);
 });
 
@@ -208,7 +208,7 @@ test('ED-6: solo "Me", then adding people and typing "me" for another is a clash
   await user.clear(nameBox(2));
   await user.type(nameBox(2), 'ME');
   await user.tab();
-  assert.equal(screen.getAllByText(/Two people are called/).length, 2);
+  assert.equal(screen.getAllByText(/^Two people have the same name\. Change one\.$/).length, 2);
 });
 
 // --- the Review "People" row ------------------------------------------
@@ -269,7 +269,7 @@ test('D6/D1/D4: Confirm on a clash stays on Review, opens People, flags both box
   assert.equal(trigger().getAttribute('aria-expanded'), 'true', 'Done is blocked and People stays open');
   await user.click(confirm());
   assert.notEqual(reviewScreen(), 'payment');
-  assert.equal(screen.getAllByText(CLASH('Ben')).length, 2);
+  assert.equal(screen.getAllByText(CLASH()).length, 2);
   assert.equal(document.activeElement, screen.getByLabelText('Your name'));
 });
 
@@ -281,7 +281,7 @@ test('D1: Done is blocked for an inner-space look-alike', async () => {
   await user.type(screen.getByLabelText('Your name'), 'Ben   Tan');
   await user.click(doneBtn());
   assert.equal(trigger().getAttribute('aria-expanded'), 'true');
-  assert.equal(screen.getAllByText(CLASH('Ben Tan')).length, 2);
+  assert.equal(screen.getAllByText(CLASH()).length, 2);
 });
 
 test('D7: while two people share a name their per-item controls are off, with the note; nothing changes', async () => {
@@ -292,7 +292,7 @@ test('D7: while two people share a name their per-item controls are off, with th
   await user.click(trigger());
   await user.clear(screen.getByLabelText('Name for person 3'));
   await user.type(screen.getByLabelText('Name for person 3'), 'BEN');
-  assert.equal(screen.getByTestId('name-clash-note').textContent, 'Fix the matching names first.');
+  assert.equal(screen.getByTestId('name-clash-note').textContent, 'Two people have the same name. Change one in People first.');
 
   const before = JSON.stringify(storedAssignments());
   const benBoxes = screen.getAllByRole('checkbox', { name: /Include (Ben|BEN)/ });
@@ -308,6 +308,59 @@ test('D7: while two people share a name their per-item controls are off, with th
   assert.equal(amountsBtn.disabled, true);
   await user.click(amountsBtn);
   assert.equal(JSON.stringify(storedAssignments()), before, 'mode did not change');
+});
+
+test('D7 (H6): in Set amounts mode the amount boxes and the RM / % switch are off and dimmed during a clash', async () => {
+  renderReview({ extraPeople: ['Ben', 'Cy'] });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: /Teh Tarik/ }));
+  await user.click(screen.getByRole('radio', { name: 'Set amounts' }));
+  for (const who of ['Me', 'Ben', 'Cy']) {
+    const box = screen.getByRole('checkbox', { name: `Include ${who}` });
+    if (!box.checked) await user.click(box);
+  }
+  const amountBoxes = () => screen.getAllByRole('textbox').filter((el) => /amount for|percentage for/.test(el.getAttribute('aria-label') || ''));
+  assert.equal(amountBoxes().length, 3, 'every ticked person has an amount box');
+  amountBoxes().forEach((el) => assert.equal(el.disabled, false, 'live before the clash'));
+  const unitRoot = () => screen.getByRole('radio', { name: 'RM' }).closest('[role="radiogroup"]');
+  const modeRoot = () => screen.getByRole('radio', { name: 'Equal split' }).closest('[role="radiogroup"]');
+  assert.ok(!unitRoot().className.includes('opacity-50'), 'not dimmed before the clash');
+  assert.ok(!modeRoot().className.includes('opacity-50'));
+
+  await user.click(trigger());
+  await user.clear(screen.getByLabelText('Name for person 3'));
+  await user.type(screen.getByLabelText('Name for person 3'), 'ME');
+  assert.ok(screen.getByTestId('name-clash-note'));
+
+  const before = JSON.stringify(storedAssignments());
+  const benBox = amountBoxes().find((el) => el.getAttribute('aria-label').startsWith("Ben's"));
+  assert.equal(benBox.disabled, false, 'the clean person keeps a live amount box');
+  amountBoxes().filter((el) => el !== benBox).forEach((el) => {
+    assert.equal(el.disabled, true, 'amount box is off during a clash');
+    assert.ok(el.className.includes('disabled:opacity-50'), 'amount box carries the dimmed look');
+    assert.ok(el.className.includes('disabled:bg-slate-100'));
+    assert.ok(el.className.includes('disabled:cursor-not-allowed'));
+  });
+  const rm = screen.getByRole('radio', { name: 'RM' });
+  const pct = screen.getByRole('radio', { name: '%' });
+  assert.equal(rm.disabled, true);
+  assert.equal(pct.disabled, true);
+  await user.click(pct);
+  assert.equal(JSON.stringify(storedAssignments()), before, 'unit did not change');
+  [unitRoot(), modeRoot()].forEach((root) => {
+    assert.ok(root.className.includes('opacity-50'), 'switch is dimmed');
+    assert.ok(root.className.includes('cursor-not-allowed'));
+  });
+  screen.getAllByRole('checkbox', { name: /Include (Me|ME)/ }).forEach((box) => {
+    assert.ok(box.className.includes('disabled:opacity-50'), 'tick box carries the dimmed look');
+    assert.ok(box.className.includes('disabled:cursor-not-allowed'));
+  });
+
+  await user.clear(screen.getByLabelText('Name for person 3'));
+  await user.type(screen.getByLabelText('Name for person 3'), 'Cyrus');
+  amountBoxes().forEach((el) => assert.equal(el.disabled, false, 'live again'));
+  assert.ok(!unitRoot().className.includes('opacity-50'), 'dimming goes with the clash');
+  assert.ok(!modeRoot().className.includes('opacity-50'));
 });
 
 test('D7/D5: the controls come back the moment the clash is fixed, with the ticks intact', async () => {

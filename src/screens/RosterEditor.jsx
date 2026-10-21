@@ -173,7 +173,7 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
                   aria-invalid={message ? true : undefined}
                   aria-describedby={message ? `roster-row-${index}-error` : undefined}
                   className={`w-full min-h-[48px] rounded-md text-sm border ${
-                    message ? 'border-red-700' : 'border-slate-300'
+                    message ? 'border-red-700 ring-1 ring-red-700' : 'border-slate-300'
                   }`}
                 />
                 {message && (

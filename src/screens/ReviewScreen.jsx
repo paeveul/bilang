@@ -446,7 +446,7 @@ export default function ReviewScreen() {
 
                     {hasClash && (
                       <p className="text-sm text-slate-600" data-testid="name-clash-note">
-                        Fix the matching names first.
+                        Two people have the same name. Change one in People first.
                       </p>
                     )}
                     <ToggleGroup.Root
@@ -456,7 +456,7 @@ export default function ReviewScreen() {
                       onValueChange={(next) => {
                         if (next) setItemMode(item.id, next);
                       }}
-                      className="flex rounded-md border border-slate-300 overflow-hidden text-xs font-medium"
+                      className={`flex rounded-md border border-slate-300 overflow-hidden text-xs font-medium${hasClash ? ' opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <ToggleGroup.Item value="equal" asChild>
                         <motion.button
@@ -524,7 +524,7 @@ export default function ReviewScreen() {
                         onValueChange={(next) => {
                           if (next) setItemManualUnit(item.id, next, item.line_total);
                         }}
-                        className="flex rounded-full border border-slate-300 overflow-hidden text-xs font-medium w-fit"
+                        className={`flex rounded-full border border-slate-300 overflow-hidden text-xs font-medium w-fit${hasClash ? ' opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <ToggleGroup.Item
                           value="RM"
@@ -552,7 +552,7 @@ export default function ReviewScreen() {
                         return (
                           <motion.div
                             key={personIndex}
-                            whileTap={TAP_SCALE}
+                            whileTap={rowLocked ? undefined : TAP_SCALE}
                             transition={TAP_TRANSITION}
                             className="flex items-center gap-2 min-h-[48px]"
                           >
@@ -561,7 +561,7 @@ export default function ReviewScreen() {
                               checked={isTicked}
                               disabled={rowLocked}
                               onChange={(e) => setItemAssignment(item.id, name, e.target.checked)}
-                              className="h-5 w-5"
+                              className="h-5 w-5 disabled:opacity-50 disabled:cursor-not-allowed"
                               aria-label={`Include ${name}`}
                             />
                             <span className="flex-1">{name}</span>
@@ -575,7 +575,7 @@ export default function ReviewScreen() {
                                 onBlur={handleManualValueBlur}
                                 disabled={rowLocked}
                                 placeholder={unit === '%' ? '0' : '0.00'}
-                                className="w-20 rounded-md border-slate-300 text-sm text-right tabular-nums min-h-[48px]"
+                                className="w-20 rounded-md border-slate-300 text-sm text-right tabular-nums min-h-[48px] disabled:opacity-50 disabled:bg-slate-100 disabled:cursor-not-allowed"
                                 aria-label={`${name}'s ${unit === '%' ? 'percentage' : 'amount'} for ${item.name || 'this item'}`}
                               />
                             )}

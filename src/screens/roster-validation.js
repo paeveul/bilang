@@ -53,8 +53,7 @@ export function validateRoster(payers) {
     if (blankIndices.includes(index)) return `Add a name for person ${index + 1}.`;
     if (tooLongIndices.includes(index)) return 'Keep names to 20 characters or fewer.';
     if (duplicateIndices.includes(index)) {
-      const name = cleanName(payers[index] || '');
-      return `Two people are called '${name}'. Give each a different name.`;
+      return 'Two people have the same name. Change one.';
     }
     return null;
   }

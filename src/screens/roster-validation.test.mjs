@@ -27,7 +27,7 @@ test('duplicate names, case-insensitive/trimmed: G9', () => {
   const r = validateRoster(['Farah', 'Ben', ' ben ']);
   assert.equal(r.valid, false);
   assert.deepEqual(r.duplicateIndices, [1, 2]);
-  assert.equal(r.messageFor(2), "Two people are called 'ben'. Give each a different name.");
+  assert.equal(r.messageFor(2), 'Two people have the same name. Change one.');
 });
 
 test('name too long: G10', () => {
@@ -82,7 +82,7 @@ test('duplicate names: a hidden character does not hide a clash (D2, ED-5)', () 
   const r = validateRoster(['Farah', 'Ben', 'Ben\u200b']);
   assert.equal(r.valid, false);
   assert.deepEqual(r.duplicateIndices, [1, 2]);
-  assert.equal(r.messageFor(2), "Two people are called 'Ben'. Give each a different name.");
+  assert.equal(r.messageFor(2), 'Two people have the same name. Change one.');
 });
 
 test('duplicate names: only the clashing rows are marked (ED-2), all three when all match (ED-3)', () => {
