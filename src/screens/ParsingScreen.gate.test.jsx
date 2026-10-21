@@ -85,3 +85,24 @@ test('G7/G9/G11: incomplete roster blocks Continue with the spec copy, then a va
   assert.equal(currentScreen(), 'review');
   assert.equal(screen.getByTestId('payers').textContent, 'Farah,Ben');
 });
+
+test('contrast: helper text is slate-600 at 14px, and the Continue button is dark text on amber', () => {
+  renderGate();
+  const helper = screen.getByTestId('solo-helper');
+  assert.match(helper.className, /text-slate-600/);
+  assert.match(helper.className, /text-sm/);
+  assert.doesNotMatch(helper.className, /text-slate-400|text-xs/);
+  const continueButton = screen.getByRole('button', { name: /Reading your receipt/ });
+  assert.doesNotMatch(continueButton.className, /(^|\s)text-white/);
+  assert.match(continueButton.className, /text-slate-900/);
+});
+
+test('invalid name border is red, not the amber used for the selected choice', async () => {
+  const user = userEvent.setup();
+  renderGate();
+  await user.click(screen.getByLabelText('More people'));
+  await user.click(finishScan());
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  assert.match(screen.getByLabelText('Your name').className, /border-red-700/);
+  assert.doesNotMatch(screen.getByLabelText('Your name').className, /border-amber/);
+});

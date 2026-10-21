@@ -22,7 +22,7 @@ export function BillProvider({ children }) {
       clearReceiptImage: () => dispatch({ type: 'CLEAR_RECEIPT_IMAGE' }),
       setParsed: (parsed) => dispatch({ type: 'SET_PARSED', parsed }),
       addPayer: (name) => dispatch({ type: 'ADD_PAYER', name }),
-      removePayer: (name) => dispatch({ type: 'REMOVE_PAYER', name }),
+      removePayer: (name, index) => dispatch({ type: 'REMOVE_PAYER', name, index }),
       renamePayer: (index, name) => dispatch({ type: 'RENAME_PAYER', index, name }),
       setClaimMode: (mode) => dispatch({ type: 'SET_CLAIM_MODE', mode }),
       setItemAssignment: (itemId, name, checked) =>

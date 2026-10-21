@@ -19,6 +19,8 @@ import {
 } from '../../js/totals.js';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
 import { validateItems } from './review-validation.js';
+import ReviewPeopleRow from './ReviewPeopleRow.jsx';
+import { validateRoster } from './roster-validation.js';
 
 const TAP_TRANSITION = { duration: 0.1 };
 const TAP_SCALE = { scale: 0.97 };
@@ -83,6 +85,9 @@ export default function ReviewScreen() {
   const [blockedIds, setBlockedIds] = useState(() => new Set());
   const [validationError, setValidationError] = useState('');
   const [moneySnapTick, setMoneySnapTick] = useState(0);
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [showRosterErrors, setShowRosterErrors] = useState(false);
+  const [rosterFocusTick, setRosterFocusTick] = useState(0);
 
   const manualInputRefs = useRef({});
 
@@ -159,7 +164,11 @@ export default function ReviewScreen() {
   // handleConfirm blocks instead, shows the messages and moves focus.
   const itemProblems = validateItems(items);
   const problemsById = new Map(itemProblems.map((p) => [p.itemId, p.problems]));
-  const canConfirm = items.length > 0 && unresolvedCount === 0;
+  // A roster problem does not disable Confirm either: tapping it opens the
+  // People panel, shows the messages and focuses the first bad name.
+  const rosterValid = validateRoster(payers).valid;
+  const readyExceptRoster = items.length > 0 && unresolvedCount === 0;
+  const canConfirm = readyExceptRoster && rosterValid;
 
   const itemSumCents = items.reduce((sum, item) => sum + toCents(item.line_total), 0);
   const statedSubtotalCents = toCents(parsed.subtotal);
@@ -224,6 +233,12 @@ export default function ReviewScreen() {
 
   function handleConfirm() {
     setMoneySnapTick((n) => n + 1);
+    if (!rosterValid) {
+      setPeopleOpen(true);
+      setShowRosterErrors(true);
+      setRosterFocusTick((n) => n + 1);
+      return;
+    }
     if (items.length === 0) {
       setValidationError('Every item needs a name, and there must be at least one item.');
       return;
@@ -262,6 +277,15 @@ export default function ReviewScreen() {
           {TRUST_COPY}
         </p>
       </div>
+
+      <ReviewPeopleRow
+        open={peopleOpen}
+        onOpenChange={setPeopleOpen}
+        showErrors={showRosterErrors}
+        onShowErrors={setShowRosterErrors}
+        onBlocked={() => setRosterFocusTick((n) => n + 1)}
+        focusTick={rosterFocusTick}
+      />
 
       {showMismatch && (
         <div
@@ -659,13 +683,18 @@ export default function ReviewScreen() {
       <motion.button
         type="button"
         onClick={handleConfirm}
-        disabled={!canConfirm}
-        whileTap={canConfirm ? TAP_SCALE : undefined}
+        disabled={!readyExceptRoster}
+        whileTap={readyExceptRoster ? TAP_SCALE : undefined}
         transition={TAP_TRANSITION}
-        className="w-full rounded-lg bg-amber-500 disabled:bg-slate-300 text-white font-semibold py-3 min-h-[48px]"
+        className="w-full rounded-lg bg-amber-500 disabled:bg-slate-300 text-slate-900 disabled:text-slate-700 font-semibold py-3 min-h-[48px]"
       >
         Confirm and continue
       </motion.button>
+      {!rosterValid && (
+        <p className="text-sm text-slate-600 text-center" data-testid="roster-block-reason">
+          Finish the people list first.
+        </p>
+      )}
     </section>
   );
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateRoster, MAX_NAME_LEN } from './roster-validation.js';
+import { validateRoster, MAX_NAME_LEN, summarizeRoster, nextPersonLabel } from './roster-validation.js';
 
 test('solo (people = 1): always valid, nothing checked', () => {
   const r = validateRoster(['Me']);
@@ -51,4 +51,23 @@ test('valid multi-person roster', () => {
 test('messageFor returns null for a row with no problem', () => {
   const r = validateRoster(['Farah', 'Ben']);
   assert.equal(r.messageFor(1), null);
+});
+
+test('AC-2/AC-3: the summary shows the host as You, even for one person', () => {
+  assert.equal(summarizeRoster(['Me']).text, 'People: 1 (You)');
+  assert.equal(summarizeRoster(['Alex', 'Ben']).text, 'People: 2 (You, Ben)');
+});
+
+test('AC-4: after three names the rest collapse to +N', () => {
+  assert.equal(summarizeRoster(['Me', 'Ben', 'Chloe']).text, 'People: 3 (You, Ben, Chloe)');
+  assert.equal(summarizeRoster(['Me', 'Ben', 'Chloe', 'D', 'E', 'F']).text, 'People: 6 (You, Ben, Chloe +3)');
+});
+
+test('summary: a blank other name reads (no name); names are trimmed', () => {
+  assert.equal(summarizeRoster(['Me', '', ' Ben ']).text, 'People: 3 (You, (no name), Ben)');
+});
+
+test('nextPersonLabel skips default-looking names already in use', () => {
+  assert.equal(nextPersonLabel(['Me', 'Person 2'], 3), 'Person 3');
+  assert.equal(nextPersonLabel(['Me', 'Person 3'], 3), 'Person 4');
 });

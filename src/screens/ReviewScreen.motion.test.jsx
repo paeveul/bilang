@@ -84,7 +84,7 @@ test('the Confirm button is confirmable and functionally unchanged with the defa
 
 test('source-level: whileTap feedback is wired on the Confirm button, "+ Add missing item", every Radix Trigger/ToggleGroup.Item, and each tick-row — all kept under the ~150ms ceiling', () => {
   const tapSites = [
-    /onClick=\{handleConfirm\}[\s\S]{0,80}disabled=\{!canConfirm\}[\s\S]{0,80}whileTap=/, // Confirm button
+    /onClick=\{handleConfirm\}[\s\S]{0,80}disabled=\{!readyExceptRoster\}[\s\S]{0,80}whileTap=/, // Confirm button
     /onClick=\{addItem\}[\s\S]{0,80}whileTap=\{TAP_SCALE\}/, // + Add missing item
     /<Accordion\.Trigger asChild>[\s\S]{0,120}<motion\.button[\s\S]{0,80}whileTap=\{TAP_SCALE\}/, // per-item accordion trigger
     /<ToggleGroup\.Item value="equal" asChild>[\s\S]{0,80}<motion\.button[\s\S]{0,80}whileTap=\{TAP_SCALE\}/, // Equal split

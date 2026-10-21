@@ -64,3 +64,31 @@ export function validateRoster(payers) {
     messageFor,
   };
 }
+
+/**
+ * The next default label ("Person 3") that no one on the roster already
+ * uses, starting from `fromNumber`. Keeps "more people" working when the
+ * host has renamed someone to a default-looking name.
+ */
+export function nextPersonLabel(existing, fromNumber) {
+  const taken = new Set(existing);
+  let n = fromNumber;
+  while (taken.has(`Person ${n}`)) n += 1;
+  return `Person ${n}`;
+}
+
+/**
+ * The collapsed one-line summary for the Review "People" row.
+ * The host (first row) always reads "You"; a blank other name reads
+ * "(no name)"; after the first three names the rest collapse to "+N".
+ */
+export function summarizeRoster(payers) {
+  const shown = payers.slice(0, 3).map((name, index) => {
+    if (index === 0) return 'You';
+    const trimmed = typeof name === 'string' ? name.trim() : '';
+    return trimmed.length === 0 ? '(no name)' : trimmed;
+  });
+  const extra = payers.length - shown.length;
+  const names = extra > 0 ? `${shown.join(', ')} +${extra}` : shown.join(', ');
+  return { count: payers.length, names, text: `People: ${payers.length} (${names})` };
+}
