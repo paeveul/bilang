@@ -212,7 +212,7 @@ test('E-5: a name matching another person (different case) is a duplicate', asyn
   await user.type(host, 'ben');
   await done(user);
   const messages = screen.getAllByText('Two people have the same name. Change one.');
-  assert.ok(messages.length >= 1);
+  assert.equal(messages.length, 2);
 });
 
 test('AC-7: renaming a person keeps their place on the items', async () => {
@@ -370,7 +370,7 @@ test('AC-8: Confirm with the editor closed and an invalid roster opens it, shows
   await user.click(confirm());
   assert.notEqual(currentScreen(), 'payment');
   assert.equal(trigger().getAttribute('aria-expanded'), 'true');
-  assert.ok(screen.getAllByText('Two people have the same name. Change one.').length >= 1);
+  assert.equal(screen.getAllByText('Two people have the same name. Change one.').length, 2);
   assert.equal(document.activeElement, screen.getByLabelText('Name for person 2'));
 });
 

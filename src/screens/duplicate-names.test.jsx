@@ -86,6 +86,10 @@ test('D4/D5: leaving the box flags BOTH boxes; fixing it clears both at once', a
   assert.equal(screen.getAllByText(CLASH()).length, 2);
   assert.equal(nameBox(1).getAttribute('aria-invalid'), 'true');
   assert.equal(nameBox(2).getAttribute('aria-invalid'), 'true');
+  for (const n of [1, 2]) {
+    assert.ok(nameBox(n).className.includes('ring-1'), `box ${n} has ring-1`);
+    assert.ok(nameBox(n).className.includes('ring-red-700'), `box ${n} has ring-red-700`);
+  }
   assert.ok(nameBox(1).getAttribute('aria-describedby'));
   assert.equal(nameBox(1).value, 'Ben', 'text kept as typed');
   assert.equal(nameBox(2).value, 'ben', 'text kept as typed');
