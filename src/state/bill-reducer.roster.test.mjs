@@ -298,6 +298,35 @@ test('removing a person while a clash is open drops the right stored name', () =
   ITEMS.forEach((item) => assert.deepEqual(s.assignments[item.id].equal.sort(), ['Chloe', 'Me']));
 });
 
+test('F1 replay: two people, one types over their own name to match the other, then the last is removed', () => {
+  let s = seeded(['Ana', 'Ben']);
+  s = reducer(s, { type: 'RENAME_PAYER', index: 0, name: 'Ben' }); // clash, Ana kept as stored name
+  s = reducer(s, { type: 'REMOVE_PAYER', name: 'Ben', index: 1 }); // stepper removes the last person
+  assert.deepEqual(s.payers, ['Ben']);
+  assert.deepEqual(s.nameKeyByIndex, {});
+  assert.deepEqual(assignmentKeys(s), ['Ben']);
+  ITEMS.forEach((item) => assert.deepEqual(s.assignments[item.id].equal, ['Ben'], 'ticks follow the person still on the roster'));
+});
+
+test('F1: after removal the stored keys always match the roster (three people, clash, remove the other one)', () => {
+  let s = seeded(['Me', 'Ben', 'Chloe']);
+  s = reducer(s, { type: 'SET_ITEM_ASSIGNMENT', itemId: 'i1', name: 'Chloe', checked: false });
+  s = reducer(s, { type: 'RENAME_PAYER', index: 1, name: 'Chloe' }); // clash; Ben held
+  s = reducer(s, { type: 'REMOVE_PAYER', name: 'Chloe', index: 2 }); // remove the real Chloe
+  assert.deepEqual(s.payers, ['Me', 'Chloe']);
+  assert.deepEqual(s.nameKeyByIndex, {});
+  assert.deepEqual(s.assignments.i1.equal, ['Me', 'Chloe'], 'the former Ben now shows as Chloe with their tick');
+  assert.deepEqual(assignmentKeys(s), s.payers);
+});
+
+test('F1: a clash that is still open after a removal keeps the held keys', () => {
+  let s = seeded(['Me', 'Ben', 'Chloe', 'Dan']);
+  s = reducer(s, { type: 'RENAME_PAYER', index: 1, name: 'Chloe' }); // Me, Chloe, Chloe, Dan; Ben held
+  s = reducer(s, { type: 'REMOVE_PAYER', name: 'Dan', index: 3 });
+  assert.deepEqual(s.payers, ['Me', 'Chloe', 'Chloe']);
+  assert.deepEqual(assignmentKeys(s), ['Me', 'Ben', 'Chloe']);
+});
+
 test('RESET clears the stored-name map along with the roster', () => {
   let s = seeded(['Me', 'Ben']);
   s = reducer(s, { type: 'RENAME_PAYER', index: 1, name: 'Me' });

@@ -9,6 +9,8 @@ import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { BillProvider, useBillActions, useBillState } from '../state/BillContext.jsx';
 import ReviewScreen from './ReviewScreen.jsx';
+import PaymentScreen from './PaymentScreen.jsx';
+import { AuthProvider } from '../auth/AuthContext.jsx';
 
 const BILL = {
   items: [
@@ -21,7 +23,9 @@ const BILL = {
   grand_total: 8,
 };
 
-function renderReview({ extraPeople = [], claimMode = 'host' } = {}) {
+// withPayment: also mount the real PaymentScreen (inside the real AuthProvider,
+// with the network stubbed) so a test can go forward to it and Back.
+function renderReview({ extraPeople = [], claimMode = 'host', withPayment = false } = {}) {
   function Harness() {
     const { setParsed, addPayer, setClaimMode } = useBillActions();
     const { screen: current, payers } = useBillState();
@@ -35,15 +39,19 @@ function renderReview({ extraPeople = [], claimMode = 'host' } = {}) {
       <>
         <span data-testid="current-screen">{current}</span>
         <span data-testid="stored-payers">{JSON.stringify(payers)}</span>
-        <ReviewScreen />
+        {withPayment && current === 'payment' ? <PaymentScreen /> : <ReviewScreen />}
       </>
     );
   }
-  return render(
+  const tree = (
     <BillProvider>
       <Harness />
     </BillProvider>
   );
+  if (!withPayment) return render(tree);
+  // The session check on mount must not touch the network.
+  globalThis.fetch = () => new Promise(() => {});
+  return render(<AuthProvider>{tree}</AuthProvider>);
 }
 
 const currentScreen = () => screen.getByTestId('current-screen').textContent;
@@ -214,6 +222,11 @@ test('AC-7: renaming a person keeps their place on the items', async () => {
   await user.clear(second);
   await user.type(second, 'Benny');
   assert.equal(screen.getAllByText('Split 2 ways').length, 2);
+  // Ben's tick moved with the rename: untick Benny on the first item and it reads as one person.
+  await done(user);
+  await user.click(screen.getByRole('button', { name: /Teh Tarik/ }));
+  const benny = screen.getAllByRole('checkbox', { name: /Benny/ })[0];
+  assert.equal(benny.checked, true, 'Benny still carries the tick Ben had');
 });
 
 // --- removing people ------------------------------------------------------
@@ -329,10 +342,16 @@ test('NF-4: a solo bill continues with no extra tap and no roster blocker', asyn
 
 test('E-7: going to payment and back keeps the roster and mode', async () => {
   const user = userEvent.setup();
-  renderReview({ extraPeople: ['Ben'], claimMode: 'payers' });
+  renderReview({ extraPeople: ['Ben'], claimMode: 'payers', withPayment: true });
   await user.click(confirm());
   assert.equal(currentScreen(), 'payment');
   assert.deepEqual(storedPayers(), ['Me', 'Ben']);
+  // Back from the real payment screen returns to Review with the roster and mode intact.
+  await user.click(screen.getByRole('button', { name: /Back/ }));
+  assert.equal(currentScreen(), 'review');
+  assert.deepEqual(storedPayers(), ['Me', 'Ben']);
+  assert.equal(screen.getByTestId('people-summary').textContent, 'People: 2 (You, Ben)');
+  assert.equal(screen.getAllByText('Not yet claimed').length, 2, 'still in let-everyone-pick mode');
 });
 
 test('no per-row Remove control: removal is by the stepper only (last person)', async () => {

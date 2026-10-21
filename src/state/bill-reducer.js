@@ -121,6 +121,22 @@ function stripKeyFromAssignments(assignments, key) {
   return next;
 }
 
+// Once every name on the roster is different again, stored keys must equal
+// the displayed names: rename every held key to its person's current name
+// (all at once) and drop the held-key map. While a clash remains, leave the
+// keys alone. Run after any change to the roster, so no path can leave ticks
+// under a name that is no longer on it.
+function settleKeys(state) {
+  if (Object.keys(state.nameKeyByIndex || {}).length === 0) return state;
+  if (new Set(state.payers).size !== state.payers.length) return state;
+  const keys = assignmentKeys(state);
+  const map = {};
+  state.payers.forEach((name, i) => {
+    if (keys[i] !== name) map[keys[i]] = name;
+  });
+  return { ...state, nameKeyByIndex: {}, assignments: rekeyAssignments(state.assignments, map) };
+}
+
 let itemIdCounter = 0;
 export function nextItemId() {
   itemIdCounter += 1;
@@ -172,12 +188,12 @@ export function reducer(state, action) {
         if (n < index) nameKeyByIndex[n] = state.nameKeyByIndex[i];
         else if (n > index) nameKeyByIndex[n - 1] = state.nameKeyByIndex[i];
       });
-      let next = {
+      let next = settleKeys({
         ...state,
         payers: state.payers.filter((_, i) => i !== index),
         nameKeyByIndex,
         assignments: stripKeyFromAssignments(state.assignments, key),
-      };
+      });
       if (next.payers.length === 1 && next.claimMode === 'payers') {
         // One person cannot "let everyone pick": back to host-assigns, and
         // that one person takes every item nobody is on.
