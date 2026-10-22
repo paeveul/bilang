@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { BillProvider, useBillActions, useBillState } from '../state/BillContext.jsx';
 import ReviewScreen from './ReviewScreen.jsx';
+import RosterGate from './RosterGate.jsx';
 import PaymentScreen from './PaymentScreen.jsx';
 import { AuthProvider } from '../auth/AuthContext.jsx';
 
@@ -341,6 +342,247 @@ test('H7: changing the head-count while the question is open closes it, even if 
   // Asking again still works normally.
   await user.click(screen.getByRole('radio', { name: /Let everyone pick their own/ }));
   assert.ok(screen.getByTestId('mode-switch-confirm'), 'a fresh tap asks afresh');
+});
+
+// --- H8: the question's own taps, look and notes (AC-M1 to AC-M12) ----------
+
+const KEPT = "Kept as is. You're still assigning the items.";
+const radioA = () => screen.getByRole('radio', { name: /I.ll assign the items/ });
+const radioB = () => screen.getByRole('radio', { name: /Let everyone pick their own/ });
+const statusNote = () => screen.getByTestId('roster-change-note').textContent;
+const tick = () => new Promise((resolve) => setTimeout(resolve, 20)); // focus moves after a tick
+
+test('AC-M1: Clear and switch makes B the mode, clears, closes, focuses B and says so', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.click(screen.getByRole('button', { name: 'Clear and switch' }));
+  await tick();
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.equal(radioB().getAttribute('aria-checked'), 'true');
+  assert.equal(screen.getAllByText('Not yet claimed').length, 2);
+  assert.equal(document.activeElement, radioB());
+  assert.equal(statusNote(), 'Switched. Items are now not yet claimed.');
+});
+
+test('AC-M2: Keep as is closes the question, keeps mode A, shows the Kept note and focuses A', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.click(screen.getByRole('button', { name: 'Keep as is' }));
+  await tick();
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.equal(radioA().getAttribute('aria-checked'), 'true');
+  assert.ok(screen.getByText('Assigned: Me'));
+  assert.equal(statusNote(), KEPT);
+  assert.equal(document.activeElement, radioA());
+});
+
+test('AC-M3: Escape does the same as Keep as is, in full', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.keyboard('{Escape}');
+  await tick();
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.equal(radioA().getAttribute('aria-checked'), 'true');
+  assert.ok(screen.getByText('Assigned: Me'));
+  assert.equal(statusNote(), KEPT);
+  assert.equal(document.activeElement, radioA());
+});
+
+test('AC-M4: tapping B again keeps one question, moves focus to its text and changes nothing else', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  screen.getByRole('button', { name: 'Clear and switch' }).focus(); // move focus away first
+  await user.click(radioB());
+  await tick();
+  assert.equal(screen.getAllByTestId('mode-switch-confirm').length, 1);
+  assert.equal(document.activeElement, document.getElementById('mode-switch-prompt'));
+  assert.equal(radioA().getAttribute('aria-checked'), 'true');
+  assert.equal(radioB().getAttribute('aria-checked'), 'false');
+  assert.ok(screen.getByText('Assigned: Me'));
+  assert.equal(statusNote(), '', 'no note appears');
+});
+
+test('AC-M5: tapping A while the question is open closes it as Keep as is', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.click(radioA());
+  await tick();
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.equal(screen.queryByTestId('mode-switch-waiting-tag'), null);
+  assert.equal(radioA().getAttribute('aria-checked'), 'true', 'A is still selected, never blank');
+  assert.equal(within(screen.getByTestId('claim-mode-toggle')).getAllByRole('radio', { checked: true }).length, 1);
+  assert.equal(statusNote(), KEPT);
+  assert.equal(document.activeElement, radioA());
+  assert.ok(screen.getByText('Assigned: Me'));
+});
+
+test('AC-M6: after tapping A, tapping B asks afresh with the tag and the Kept note is gone', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.click(radioA());
+  assert.equal(statusNote(), KEPT);
+  await user.click(radioB());
+  assert.ok(screen.getByTestId('mode-switch-confirm'));
+  assert.ok(screen.getByTestId('mode-switch-waiting-tag'));
+  assert.equal(statusNote(), '');
+  assert.equal(radioA().getAttribute('aria-checked'), 'true', 'mode is still A until answered');
+});
+
+test('AC-M7: closing and reopening the People panel leaves no question and no tag', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await done(user);
+  await openPeople(user);
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.equal(screen.queryByTestId('mode-switch-waiting-tag'), null);
+  assert.equal(radioA().getAttribute('aria-checked'), 'true');
+  assert.ok(screen.getByText('Assigned: Me'));
+});
+
+test('AC-M8: people 2 > 1 > 2 with the question open brings the toggle back with no question and no tag', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.click(screen.getByLabelText('Fewer people'));
+  assert.equal(screen.queryByTestId('claim-mode-toggle'), null);
+  await user.click(screen.getByLabelText('More people'));
+  assert.ok(screen.getByTestId('claim-mode-toggle'));
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.equal(screen.queryByTestId('mode-switch-waiting-tag'), null);
+  assert.equal(radioA().getAttribute('aria-checked'), 'true');
+});
+
+test('AC-M10: no way of closing the question changes the mode, the assignments or the server', async () => {
+  let calls = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = () => {
+    calls += 1;
+    return new Promise(() => {});
+  };
+  try {
+    for (const route of ['keep', 'escape', 'tapA', 'panel']) {
+      cleanup();
+      const user = userEvent.setup();
+      renderReview({ extraPeople: ['Ben'] });
+      await openSwitchQuestion(user);
+      if (route === 'keep') await user.click(screen.getByRole('button', { name: 'Keep as is' }));
+      if (route === 'escape') await user.keyboard('{Escape}');
+      if (route === 'tapA') await user.click(radioA());
+      if (route === 'panel') {
+        await done(user);
+        await openPeople(user);
+      }
+      assert.equal(radioA().getAttribute('aria-checked'), 'true', route);
+      assert.ok(screen.getByText('Assigned: Me'), `${route}: the hand-set item is untouched`);
+      assert.equal(screen.queryByText('Not yet claimed'), null, route);
+      assert.deepEqual(storedPayers(), ['Me', 'Ben'], route);
+    }
+    assert.equal(calls, 0, 'nothing is sent to the server');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('AC-M11: while pending, A stays lit and the only checked radio; B has a dark outline, the tag and aria-describedby; the box is white', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  assert.match(radioA().className, /\bborder-amber-600\b/);
+  assert.match(radioA().className, /\bbg-amber-50\b/);
+  assert.equal(within(screen.getByTestId('claim-mode-toggle')).getAllByRole('radio', { checked: true }).length, 1);
+  assert.equal(radioB().getAttribute('aria-checked'), 'false');
+  assert.match(radioB().className, /\bborder\b/);
+  assert.match(radioB().className, /\bborder-slate-900\b/);
+  assert.match(radioB().className, /\bring-1\b/);
+  assert.doesNotMatch(radioB().className, /\bborder-2\b/, 'border-2 would move the box');
+  assert.equal(radioB().getAttribute('aria-describedby'), 'mode-switch-prompt');
+  assert.ok(document.getElementById('mode-switch-prompt'), 'the description target exists');
+  const tag = screen.getByTestId('mode-switch-waiting-tag');
+  assert.equal(tag.textContent, 'Waiting for your answer');
+  assert.equal(tag.querySelector('.sr-only').textContent, ' for your answer');
+  assert.equal(radioA().contains(tag), false, 'the tag belongs to B only');
+  const box = screen.getByTestId('mode-switch-confirm');
+  assert.match(box.className, /\bbg-white\b/);
+  assert.doesNotMatch(box.className, /\bbg-amber-50\b/);
+  assert.match(box.className, /\bborder-slate-900\b/);
+  assert.match(box.className, /\bring-1\b/);
+  // And it is all gone once answered.
+  await user.click(screen.getByRole('button', { name: 'Keep as is' }));
+  assert.equal(screen.queryByTestId('mode-switch-waiting-tag'), null);
+  assert.equal(radioB().getAttribute('aria-describedby'), null);
+  assert.doesNotMatch(radioB().className, /\bborder-slate-900\b/);
+});
+
+test('AC-M12: tapping an item row while the question is open does not close it', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.click(screen.getByRole('button', { name: /Roti Canai/ }));
+  assert.ok(screen.getByTestId('mode-switch-confirm'), 'still open');
+  assert.ok(screen.getByTestId('mode-switch-waiting-tag'), 'tag still shown');
+  assert.equal(radioA().getAttribute('aria-checked'), 'true');
+});
+
+test('AC-M5 edge: tapping A with no question open is still ignored', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await handAssignFirstItem(user);
+  await openPeople(user);
+  await user.click(radioA());
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.equal(radioA().getAttribute('aria-checked'), 'true');
+  assert.equal(statusNote(), '', 'no Kept note when nothing was asked');
+  assert.ok(screen.getByText('Assigned: Me'));
+});
+
+test('single source: the scan-wait gate gets the same tag, tap-A close and Kept note', async () => {
+  function GateHarness() {
+    const { setParsed, addPayer, setItemAssignment } = useBillActions();
+    const { parsed } = useBillState();
+    useEffect(() => {
+      addPayer('Ben');
+      setParsed(BILL);
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once
+    }, []);
+    useEffect(() => {
+      if (parsed?.items?.length) setItemAssignment(parsed.items[0].id, 'Ben', false); // hand-assign
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- once the bill is parsed
+    }, [parsed]);
+    return (
+      <RosterGate
+        scanDone={false}
+        touched={false}
+        onTouch={() => {}}
+        onContinue={() => {}}
+        showErrors={false}
+        onShowErrors={() => {}}
+      />
+    );
+  }
+  const user = userEvent.setup();
+  render(
+    <BillProvider>
+      <GateHarness />
+    </BillProvider>
+  );
+  assert.equal(statusNote(), '', 'the status line is mounted and empty');
+  await user.click(radioB());
+  assert.ok(screen.getByTestId('mode-switch-confirm'));
+  assert.ok(screen.getByTestId('mode-switch-waiting-tag'));
+  await user.click(radioA());
+  await tick();
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.equal(screen.queryByTestId('mode-switch-waiting-tag'), null);
+  assert.equal(radioA().getAttribute('aria-checked'), 'true');
+  assert.equal(statusNote(), KEPT);
+  assert.equal(document.activeElement, radioA());
 });
 
 test('AC-19: with nothing hand-assigned the switch is immediate, no prompt', async () => {

@@ -17,10 +17,15 @@ import { nextPersonLabel, stripHiddenChars, validateRoster } from './roster-vali
 const TAP_SCALE = { scale: 0.97 };
 const TAP_TRANSITION = { duration: 0.1 };
 
-function optionClass(selected) {
-  return `w-full min-h-[48px] text-left rounded-lg border p-3 ${
-    selected ? 'border-amber-600 bg-amber-50' : 'border-slate-300'
-  }`;
+const KEPT_NOTE = "Kept as is. You're still assigning the items.";
+
+// pending: this option is the one the host tapped and the question is open.
+// A dark 1px outline plus a 1px ring (never border-2, which would move the box).
+function optionClass(selected, pending = false) {
+  let look = 'border-slate-300';
+  if (selected) look = 'border-amber-600 bg-amber-50';
+  else if (pending) look = 'border-slate-900 ring-1 ring-slate-900';
+  return `w-full min-h-[48px] text-left rounded-lg border p-3 ${look}`;
 }
 
 export default function RosterEditor({ showErrors, onTouch, showChangeNotes = false }) {
@@ -118,9 +123,23 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
   }
 
   function handleModeChange(next) {
+    // Tapping the choice the host is already on (Radix sends an empty value)
+    // while the question is open means "stay here": the same as Keep as is.
+    if (confirmVisible && (!next || next === 'host')) {
+      keepAsIs();
+      return;
+    }
     if (!next || next === claimMode) return;
     touch();
     if (next === 'payers' && hasHandAssignedItems(state)) {
+      if (confirmVisible) {
+        // Tapped the waiting option again: no state change, just bring the
+        // question back (focus, and scroll only if it is out of view).
+        promptRef.current?.focus({ preventScroll: true });
+        promptRef.current?.scrollIntoView?.({ block: 'nearest' });
+        return;
+      }
+      setNote('');
       setPendingSwitch(true);
       return;
     }
@@ -137,6 +156,7 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
 
   function keepAsIs() {
     setPendingSwitch(false);
+    setNote(KEPT_NOTE);
     focusOption('host');
   }
 
@@ -224,9 +244,26 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
                 data-mode-option="payers"
                 whileTap={TAP_SCALE}
                 transition={TAP_TRANSITION}
-                className={optionClass(claimMode === 'payers')}
+                aria-describedby={confirmVisible ? 'mode-switch-prompt' : undefined}
+                className={optionClass(claimMode === 'payers', confirmVisible)}
               >
-                <span className="block text-sm font-medium">Let everyone pick their own</span>
+                <span
+                  className={
+                    confirmVisible
+                      ? 'flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium'
+                      : 'block text-sm font-medium'
+                  }
+                >
+                  Let everyone pick their own
+                  {confirmVisible && (
+                    <span
+                      data-testid="mode-switch-waiting-tag"
+                      className="inline-block rounded border border-slate-900 bg-white px-1.5 text-sm font-semibold text-slate-900"
+                    >
+                      Waiting<span className="sr-only"> for your answer</span>
+                    </span>
+                  )}
+                </span>
                 <span className="block text-sm text-slate-600">
                   Each person opens the link and taps their own items.
                 </span>
@@ -244,7 +281,7 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
               role="group"
               aria-labelledby="mode-switch-prompt"
               data-testid="mode-switch-confirm"
-              className="rounded-lg border border-slate-300 bg-amber-50 p-3 space-y-2"
+              className="rounded-lg border border-slate-900 ring-1 ring-slate-900 bg-white p-3 space-y-2"
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   e.stopPropagation();
@@ -278,11 +315,16 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
         </div>
       )}
 
-      {showChangeNotes && (
-        <p role="status" className="text-sm text-slate-600" data-testid="roster-change-note">
-          {statusText}
-        </p>
-      )}
+      {/* Always mounted so a note added later (Kept as is, Switched) is announced.
+          Where change notes are off (the scan-wait gate) it shows only the
+          mode-switch notes and takes no room while empty. */}
+      <p
+        role="status"
+        className={showChangeNotes || statusText ? 'text-sm text-slate-600' : 'sr-only'}
+        data-testid="roster-change-note"
+      >
+        {statusText}
+      </p>
 
       {showErrors && !validation.valid && (
         <div role="alert" className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3">
