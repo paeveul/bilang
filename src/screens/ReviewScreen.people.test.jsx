@@ -299,6 +299,50 @@ test('the prompt answers Escape as Keep as is', async () => {
   assert.ok(screen.getByText('Assigned: Me'));
 });
 
+// --- H7: the switch question must not outlive the moment it was asked -------
+
+async function openSwitchQuestion(user) {
+  await handAssignFirstItem(user);
+  await openPeople(user);
+  await user.click(screen.getByRole('radio', { name: /Let everyone pick their own/ }));
+  assert.ok(screen.getByTestId('mode-switch-confirm'), 'the question is open');
+}
+
+test('H7: stepper 2 > 1 > 2 with the question open leaves it closed', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.click(screen.getByLabelText('Fewer people'));
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  await user.click(screen.getByLabelText('More people'));
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null, 'no question comes back with no tap');
+});
+
+test('H7: answering the question closes it for good, including after later changes', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.click(screen.getByRole('button', { name: 'Clear and switch' }));
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  await user.click(screen.getByLabelText('Fewer people'));
+  await user.click(screen.getByLabelText('More people'));
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  await user.click(screen.getByRole('radio', { name: /I.ll assign the items/ }));
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null, 'switching back asks nothing');
+});
+
+test('H7: changing the head-count while the question is open closes it, even if people stay at 2 or more', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben'] });
+  await openSwitchQuestion(user);
+  await user.click(screen.getByLabelText('More people')); // 2 -> 3
+  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.equal(storedPayers().length, 3);
+  // Asking again still works normally.
+  await user.click(screen.getByRole('radio', { name: /Let everyone pick their own/ }));
+  assert.ok(screen.getByTestId('mode-switch-confirm'), 'a fresh tap asks afresh');
+});
+
 test('AC-19: with nothing hand-assigned the switch is immediate, no prompt', async () => {
   const user = userEvent.setup();
   renderReview({ extraPeople: ['Ben'] });
