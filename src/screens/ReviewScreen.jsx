@@ -17,7 +17,7 @@ import {
   percentToCents,
   toCents,
 } from '../../js/totals.js';
-import { ALLOW_USE_DIFFERENCE_AS_ROUNDING, computeReceiptStatus } from './receipt-status.js';
+import { computeReceiptStatus } from './receipt-status.js';
 import { ItemDiscountLine, itemNetRM } from './discount-lines.js';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
 import { validateItems } from './review-validation.js';
@@ -298,14 +298,6 @@ export default function ReviewScreen() {
   function setRounding(sign, amountRM) {
     editBill('rounding', sign === 'takes' ? 0 - amountRM : amountRM);
   }
-  function useDifferenceAsRounding() {
-    const next = receiptStatus.rounding.resultingCents;
-    setRoundingOpen(true);
-    updateBillField('rounding', fromCents(next));
-    setLiveNote(`Rounding set to ${signedRM(next)}. Adds up to the receipt.`);
-    setBillFocus('rounding');
-  }
-
   // Radix Accordion.Root, controlled: `value` is the array of currently-open
   // item ids, `onValueChange` fires with the NEXT array Radix wants to
   // apply after a trigger was activated. We inspect the diff to find which
@@ -1025,24 +1017,7 @@ export default function ReviewScreen() {
                     {formatRMLocked(fromCents(receiptStatus.grandTotalCents))}.
                   </p>
                   {receiptStatus.hint && <p data-testid="reconcile-hint">{hintText(receiptStatus.hint)}</p>}
-                  <p>Check each amount against your receipt.</p>
-                  {ALLOW_USE_DIFFERENCE_AS_ROUNDING &&
-                    (receiptStatus.rounding.allowed ? (
-                      <div className="space-y-2">
-                        <p>If the receipt really shows this, you can book it as rounding.</p>
-                        <button
-                          type="button"
-                          onClick={useDifferenceAsRounding}
-                          className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 text-sm font-medium min-h-[48px] px-3"
-                        >
-                          Use this difference as rounding
-                        </button>
-                      </div>
-                    ) : (
-                      <p className="text-slate-700" data-testid="rounding-too-big">
-                        This is too big to be rounding. Check your items and amounts.
-                      </p>
-                    ))}
+                  <p data-testid="reconcile-pointer">Check each amount against your paper receipt and fix the one that is different.</p>
                 </>
               )}
             </div>

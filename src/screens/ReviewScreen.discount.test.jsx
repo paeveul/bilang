@@ -405,3 +405,37 @@ test('the status is announced through one polite live region, after typing pause
   assert.match(live.textContent, /Adds up to the receipt/);
   await waitFor(() => assert.match(live.textContent, /Does not add up: RM 0\.01 short/), { timeout: 3000 });
 });
+
+const POINTER = 'Check each amount against your paper receipt and fix the one that is different.';
+
+test('a difference of any size shows the pointer to the paper receipt; it goes away once the receipt adds up', async () => {
+  const user = userEvent.setup();
+  renderWith(plainBill());
+  for (const total of [114.97, 115, 120]) {
+    await setGrandTotal(user, total);
+    assert.equal(screen.getByTestId('reconcile-pointer').textContent, POINTER);
+  }
+  await setGrandTotal(user, 114.94);
+  assert.equal(status().getAttribute('data-state'), 'ok');
+  assert.equal(screen.queryByTestId('reconcile-pointer'), null);
+  assert.doesNotMatch(status().textContent, /paper receipt/);
+});
+
+test('the pointer is not shown for the other red states', async () => {
+  const user = userEvent.setup();
+  renderWith(plainBill());
+  await user.click(screen.getByRole('button', { name: '+ Add discount' }));
+  await user.type(screen.getByLabelText('Discount (whole bill)'), '150');
+  assert.match(status().textContent, /Discount is more than the items total/);
+  assert.equal(screen.queryByTestId('reconcile-pointer'), null);
+});
+
+test('a difference leaves every scanned figure on screen exactly as scanned', async () => {
+  const user = userEvent.setup();
+  renderWith(billWithDiscountAndRounding());
+  const rounding = () => within(screen.getByTestId('rounding-row')).getByLabelText('Rounding amount').value;
+  const before = rounding();
+  await setGrandTotal(user, 114.99);
+  assert.equal(rounding(), before);
+  assert.equal(screen.queryByTestId('rounding-edited-tag'), null);
+});

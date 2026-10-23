@@ -17,6 +17,5 @@ export {
   hasDiscountFields,
   reconcileReceipt,
   billDiscountExceedsItems,
-  suggestedRoundingRM,
   normalizeScanDiscounts,
 } from '../api/_lib/totals.js';

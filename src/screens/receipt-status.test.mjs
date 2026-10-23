@@ -1,10 +1,11 @@
 // src/screens/receipt-status.test.mjs — the wording decisions behind the status
-// panel: which state, the exact difference, the hint, the rounding cap.
+// panel: which state, the exact difference, and the hint.
 //
 // Run: node --test src/screens/receipt-status.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeReceiptStatus, MAX_ROUNDING_CENTS } from './receipt-status.js';
+import * as receiptStatusModule from './receipt-status.js';
+import { computeReceiptStatus } from './receipt-status.js';
 
 const food = (id, line_total, discount = 0) => ({ id, name: `Dish ${id}`, category: 'food', qty: 1, unit_price: line_total, line_total, discount });
 const bill = (extra = {}) => ({ subtotal: 100, service_charge: 9, tax: 5.94, discount: 0, rounding: 0, grand_total: 114.94, ...extra });
@@ -41,31 +42,12 @@ test('one sen out either way: blocked with the signed direction and exact figure
   assert.equal(over.blocked, true);
 });
 
-test('use-as-rounding is allowed up to RM 0.05 on the resulting rounding, and not above', () => {
-  assert.equal(MAX_ROUNDING_CENTS, 5);
-  assert.equal(computeReceiptStatus(items(), bill({ grand_total: 114.99 })).rounding.allowed, true);
-  assert.equal(computeReceiptStatus(items(), bill({ grand_total: 115 })).rounding.allowed, false);
-  assert.equal(computeReceiptStatus(items(), bill({ grand_total: 114.88 })).rounding.allowed, false);
-  assert.equal(computeReceiptStatus(items(), bill({ grand_total: 114.89 })).rounding.allowed, true);
-});
-
-test('the cap counts the rounding already there plus the difference', () => {
-  // Rounding +0.04 already there, a further 0.03 short: the new rounding would be 0.07.
-  const s = computeReceiptStatus(items(), bill({ rounding: 0.04, grand_total: 114.94 + 0.04 + 0.03 }));
-  assert.equal(s.rounding.resultingCents, 7);
-  assert.equal(s.rounding.allowed, false);
-  // A negative rounding that the difference pulls back toward zero is fine.
-  const back = computeReceiptStatus(items(), bill({ rounding: -0.04, grand_total: 114.94 - 0.04 + 0.03 }));
-  assert.equal(back.rounding.resultingCents, -1);
-  assert.equal(back.rounding.allowed, true);
-});
-
 test('an item discount above its price: blocked, names the item, no rounding offer', () => {
   const s = computeReceiptStatus([food('a', 40, 41), food('b', 60)], bill({ grand_total: 109.2 }));
   assert.equal(s.kind, 'item_discount_too_big');
   assert.equal(s.itemName, 'Dish a');
   assert.equal(s.blocked, true);
-  assert.equal(s.rounding, null);
+  assert.equal('rounding' in s, false);
 });
 
 test('an item discount equal to its price is allowed', () => {
@@ -77,7 +59,7 @@ test('a bill discount above the items total: its own state; equal is allowed', (
   const tooBig = computeReceiptStatus(items(), bill({ discount: 100.01 }));
   assert.equal(tooBig.kind, 'bill_discount_too_big');
   assert.equal(tooBig.blocked, true);
-  assert.equal(tooBig.rounding, null);
+  assert.equal('rounding' in tooBig, false);
   const equal = computeReceiptStatus(items(), bill({ discount: 100, grand_total: 14.94 }));
   assert.equal(equal.kind, 'ok');
 });
@@ -115,7 +97,11 @@ test('no hint when the difference matches no discount', () => {
   assert.equal(computeReceiptStatus(items(), bill({ grand_total: 114.95 })).hint, null);
 });
 
-test('the use-as-rounding shortcut is switched off: the app never rewrites a scanned figure', async () => {
-  const { ALLOW_USE_DIFFERENCE_AS_ROUNDING } = await import('./receipt-status.js');
-  assert.equal(ALLOW_USE_DIFFERENCE_AS_ROUNDING, false);
+test('the app never offers to turn a difference into rounding: no switch, no rounding verdict', () => {
+  assert.equal('ALLOW_USE_DIFFERENCE_AS_ROUNDING' in receiptStatusModule, false);
+  assert.equal('MAX_ROUNDING_CENTS' in receiptStatusModule, false);
+  const s = computeReceiptStatus(items(), bill({ grand_total: 114.99 }));
+  assert.equal(s.kind, 'off');
+  assert.equal(s.blocked, true);
+  assert.equal('rounding' in s, false);
 });

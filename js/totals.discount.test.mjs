@@ -9,7 +9,6 @@ import assert from 'node:assert/strict';
 import {
   computeTotals,
   reconcileReceipt,
-  suggestedRoundingRM,
   normalizeScanDiscounts,
   hasDiscountFields,
   manualItemRemainingCents,
@@ -169,19 +168,6 @@ test('the check is exact: off by one sen fails, with the exact difference', () =
   const other = reconcileReceipt(itemsA, { ...billA, grand_total: 104.94 });
   assert.equal(other.differenceCents, -1);
   assert.equal(other.matches, false);
-});
-
-test('"use this difference as rounding": suggestion makes the check exact, nothing automatic', () => {
-  const off = { ...billA, rounding: 0, grand_total: 104.95 }; // rounding left out: 0.01 missing
-  assert.equal(reconcileReceipt(itemsA, off).differenceCents, 1);
-  const fixed = { ...off, rounding: suggestedRoundingRM(itemsA, off) };
-  assert.equal(fixed.rounding, 0.01);
-  assert.equal(reconcileReceipt(itemsA, fixed).matches, true);
-  // A receipt that already adds up suggests its own rounding back.
-  assert.equal(suggestedRoundingRM(itemsA, billA), 0.01);
-  // The difference may go either way and may be a "5 sen" style gap, reflected as-is.
-  const five = { ...off, rounding: -0.04 };
-  assert.equal(suggestedRoundingRM(itemsA, five), 0.01);
 });
 
 test('double-count trap: net printed and discount subtracted again is off by exactly the discount, with a hint', () => {

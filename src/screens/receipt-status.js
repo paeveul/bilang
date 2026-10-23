@@ -5,17 +5,6 @@
 
 import { billDiscountExceedsItems, reconcileReceipt, toCents } from '../../js/totals.js';
 
-// One switch for the one-tap "Use this difference as rounding". It is off: the
-// app never changes a scanned rounding, discount or total by itself, so the
-// button, its lead-in line and the "too big to be rounding" line are not shown.
-// The host can still correct a misread field by hand. Set it to true to bring
-// them back; nothing else changes.
-export const ALLOW_USE_DIFFERENCE_AS_ROUNDING = false;
-
-// The most the host may book as rounding in one tap (RM 0.05), counted on the
-// resulting Rounding (what is already there plus the difference).
-export const MAX_ROUNDING_CENTS = 5;
-
 /**
  * @returns {{
  *   applicable: boolean,
@@ -26,8 +15,7 @@ export const MAX_ROUNDING_CENTS = 5;
  *   grandTotalCents: number,
  *   direction: 'short'|'over'|null,
  *   itemName: string|null,
- *   hint: null|{ amountCents:number, target:'item'|'items'|'bill', direction:'short'|'over' },
- *   rounding: null|{ allowed:boolean, resultingCents:number }  // only when kind is 'off'
+ *   hint: null|{ amountCents:number, target:'item'|'items'|'bill', direction:'short'|'over' }
  * }}
  */
 export function computeReceiptStatus(items, parsed) {
@@ -43,7 +31,6 @@ export function computeReceiptStatus(items, parsed) {
     direction: null,
     itemName: null,
     hint: null,
-    rounding: null,
   };
   // An older split / a fixture without the new fields: no exact check, no panel.
   if (!rec.applicable || list.length === 0) return base;
@@ -78,13 +65,11 @@ export function computeReceiptStatus(items, parsed) {
     else target = 'items';
     hint = { amountCents: amount, target, direction };
   }
-  const resultingCents = toCents(parsed && parsed.rounding) + rec.differenceCents;
   return {
     ...base,
     kind: 'off',
     blocked: true,
     direction,
     hint,
-    rounding: { allowed: Math.abs(resultingCents) <= MAX_ROUNDING_CENTS, resultingCents },
   };
 }

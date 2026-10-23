@@ -372,7 +372,7 @@ function hasDiscountFields(items, billTotals) {
  * `subtotal` is not part of it. Negative discounts are read as positive.
  * `differenceCents` is grand_total minus what the lines add up to: positive
  * means the receipt prints more than the lines explain. Adding it to the
- * rounding makes the check exact (see suggestedRoundingRM).
+ * rounding makes the check exact (the app never applies that for the host).
  *
  * @returns {{
  *   applicable: boolean,      // false for a split saved before these fields existed
@@ -447,16 +447,6 @@ function billDiscountExceedsItems(items, billTotals) {
 }
 
 /**
- * The rounding (RM, signed) that would make the receipt add up exactly: the
- * current rounding plus the leftover difference. For the host's explicit
- * "use this difference as rounding" action; nothing calls it automatically.
- */
-function suggestedRoundingRM(items, billTotals) {
-  const { differenceCents } = reconcileReceipt(items, billTotals);
-  return fromCents(toCents((billTotals || {}).rounding) + differenceCents);
-}
-
-/**
  * Tidies a scan result so the maths only ever sees clean figures:
  *  - a missing item `discount`, bill `discount` or `rounding` becomes 0;
  *  - a printed negative discount becomes a positive one;
@@ -513,6 +503,5 @@ module.exports = {
   hasDiscountFields,
   reconcileReceipt,
   billDiscountExceedsItems,
-  suggestedRoundingRM,
   normalizeScanDiscounts,
 };
