@@ -71,7 +71,7 @@ function isItemResolved(item, assignment) {
 
 // A money box that keeps what the host is typing (so "0." survives), accepts
 // positive amounts only (a typed or pasted minus is dropped), and follows the
-// stored value when something else changes it (Undo, "use as rounding").
+// stored value when something else changes it (Undo).
 function MoneyField({ value, onValue, inputRef, ...rest }) {
   const [text, setText] = useState(() => (value ? String(value) : ''));
   useEffect(() => {
@@ -535,7 +535,8 @@ export default function ReviewScreen() {
                         <span className="text-xs text-slate-500">Qty</span>
                         <input
                           type="number"
-                          step="1"
+                          step="any"
+                          inputMode="decimal"
                           min="0"
                           value={item.qty}
                           onChange={(e) => updateItemField(item.id, 'qty', Number(e.target.value) || 0)}

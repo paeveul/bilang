@@ -84,6 +84,19 @@ test('qty edit: the line price follows with the calculated cue; the subtotal mov
   assert.equal(screen.getByLabelText('Unit price').value, '6.5');
 });
 
+test('qty accepts a decimal such as 0.333 and a typed "0." followed by "3" is kept', async () => {
+  renderReview(plainBill());
+  await openFirstItem();
+  const qty = screen.getByLabelText('Qty');
+  assert.equal(qty.getAttribute('step'), 'any');
+  assert.equal(qty.getAttribute('inputmode'), 'decimal');
+  change(qty, '0.');
+  change(screen.getByLabelText('Qty'), '0.3');
+  change(screen.getByLabelText('Qty'), '0.333');
+  assert.equal(screen.getByLabelText('Qty').value, '0.333');
+  assert.equal(lineTotal().value, '2.16');
+});
+
 test('a sub-sen product shows the rounded cue; a whole-sen product goes back to the calculated cue', async () => {
   renderReview(plainBill());
   await openFirstItem();
