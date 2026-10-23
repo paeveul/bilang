@@ -156,7 +156,14 @@ export function reducer(state, action) {
       return { ...state, receiptImageBase64: null };
     case 'SET_PARSED': {
       const items = (action.parsed.items || []).map((item) => ({ id: nextItemId(), ...item }));
-      return { ...state, parsed: { ...action.parsed, items } };
+      // Keep what the scan read for the rounding line, so the screen can tell
+      // when the host changed it (and offer Undo). A parse without the new
+      // fields (an older shape) has no scanned rounding to compare with.
+      const scanned =
+        action.parsed.rounding !== undefined || action.parsed.discount !== undefined
+          ? { scanned_rounding: Number.isFinite(action.parsed.rounding) ? action.parsed.rounding : 0 }
+          : {};
+      return { ...state, parsed: { ...action.parsed, ...scanned, items } };
     }
     case 'ADD_PAYER': {
       const keys = assignmentKeys(state);

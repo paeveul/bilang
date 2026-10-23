@@ -3,7 +3,7 @@
 // totals.per_person from items + assignments + payers and stores its own
 // figures, so the per_person sent here is a preview the server checks.
 
-import { computeTotals } from '../../js/totals.js';
+import { computeTotals, toCents } from '../../js/totals.js';
 import { rekeyAssignments } from '../state/bill-reducer.js';
 import { cleanName } from './roster-validation.js';
 
@@ -18,6 +18,11 @@ export function buildSplitPayload({ parsed, payers: rawPayers, assignments: rawA
   });
   const assignments = Object.keys(renames).length ? rekeyAssignments(rawAssignments, renames) : rawAssignments;
   const { perPerson } = computeTotals(parsed.items, assignments, parsed, payers);
+  // Bill discount and rounding are sent only when the receipt carries them (an
+  // older shape sends neither, and reads as 0 on the server). The saved edited
+  // flag is true only for a scanned split where the host changed the rounding.
+  const roundingEdited =
+    parsed.scanned_rounding !== undefined && toCents(parsed.rounding) !== toCents(parsed.scanned_rounding);
   return {
     items: parsed.items,
     assignments,
@@ -27,6 +32,9 @@ export function buildSplitPayload({ parsed, payers: rawPayers, assignments: rawA
       service_charge: parsed.service_charge,
       tax: parsed.tax,
       grand_total: parsed.grand_total,
+      ...(parsed.discount !== undefined ? { discount: Math.abs(parsed.discount) } : {}),
+      ...(parsed.rounding !== undefined ? { rounding: parsed.rounding } : {}),
+      ...(roundingEdited ? { rounding_edited: true } : {}),
       per_person: Object.fromEntries(
         Object.entries(perPerson).map(([name, p]) => [name, Math.round(p.totalCents) / 100])
       ),

@@ -153,3 +153,74 @@ test('D9: names that were already clean leave the assignments untouched', () => 
   const body = buildSplitPayload({ parsed, payers: ['Ali', 'Bea'], assignments, ownerPaymentHandle: 'x' });
   assert.equal(body.assignments, assignments);
 });
+
+const withFields = (extra = {}, itemExtra = {}) => ({
+  items: [
+    { id: 'i1', name: 'Satay', category: 'food', qty: 1, unit_price: 40, line_total: 40, discount: 8, ...itemExtra },
+    { id: 'i2', name: 'Rice', category: 'food', qty: 1, unit_price: 60, line_total: 60, discount: 0 },
+  ],
+  subtotal: 100,
+  service_charge: 9.2,
+  tax: 0,
+  discount: 0,
+  rounding: 0,
+  grand_total: 101.2,
+  scanned_rounding: 0,
+  ...extra,
+});
+
+test('payload carries the item discount, bill discount and rounding when the receipt has them', () => {
+  const body = buildSplitPayload({
+    parsed: withFields({ discount: 5, rounding: -0.02, scanned_rounding: -0.02 }),
+    payers: ['Ali', 'Bea'],
+    assignments: { i1: ['Ali'], i2: ['Bea'] },
+    ownerPaymentHandle: 'x',
+  });
+  assert.equal(body.items[0].discount, 8);
+  assert.equal(body.totals.discount, 5);
+  assert.equal(body.totals.rounding, -0.02);
+  assert.equal('scanned_rounding' in body.totals, false);
+  assert.equal('rounding_edited' in body.totals, false);
+});
+
+test('the edited flag is sent only when the rounding differs from the scanned value', () => {
+  const edited = buildSplitPayload({
+    parsed: withFields({ rounding: 0.03, scanned_rounding: 0 }),
+    payers: ['Ali'],
+    assignments: {},
+    ownerPaymentHandle: 'x',
+  });
+  assert.equal(edited.totals.rounding_edited, true);
+  const same = buildSplitPayload({
+    parsed: withFields({ rounding: 0.03, scanned_rounding: 0.03 }),
+    payers: ['Ali'],
+    assignments: {},
+    ownerPaymentHandle: 'x',
+  });
+  assert.equal('rounding_edited' in same.totals, false);
+});
+
+test('with no scanned rounding value (manual entry) the edited flag is never sent', () => {
+  const { scanned_rounding, ...manual } = withFields({ rounding: 0.03 });
+  const body = buildSplitPayload({ parsed: manual, payers: ['Ali'], assignments: {}, ownerPaymentHandle: 'x' });
+  assert.equal('rounding_edited' in body.totals, false);
+  assert.equal(body.totals.rounding, 0.03);
+});
+
+test('a parsed receipt without the new fields sends none of them', () => {
+  const body = buildSplitPayload({ parsed, payers: ['Ali', 'Bea'], assignments, ownerPaymentHandle: 'x' });
+  assert.equal('discount' in body.totals, false);
+  assert.equal('rounding' in body.totals, false);
+  assert.equal('rounding_edited' in body.totals, false);
+});
+
+test("the per-person preview includes each person's share of the bill discount and rounding", () => {
+  const body = buildSplitPayload({
+    parsed: withFields({ discount: 10, rounding: 0.01, scanned_rounding: 0.01, grand_total: 91.21 }),
+    payers: ['Ali', 'Bea'],
+    assignments: { i1: ['Ali', 'Bea'], i2: ['Ali', 'Bea'] },
+    ownerPaymentHandle: 'x',
+  });
+  const sum = Object.values(body.totals.per_person).reduce((a, v) => a + Math.round(v * 100), 0);
+  assert.equal(sum, 9121);
+});
