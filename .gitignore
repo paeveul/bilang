@@ -73,3 +73,16 @@ README.md
 .impeccable/live/server.json
 .impeccable/live/sessions/
 .impeccable/live/previews/
+
+# Receipt photos hold personal data: never commit them by accident. Scoped to
+# the script and test fixture folders so icons under public/ stay addable.
+scripts/**/*.jpg
+scripts/**/*.jpeg
+scripts/**/*.png
+scripts/**/*.webp
+scripts/**/*.heic
+test/**/*.jpg
+test/**/*.jpeg
+test/**/*.png
+test/**/*.webp
+test/**/*.heic
