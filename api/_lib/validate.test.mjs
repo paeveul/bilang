@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   validateSplitCreateRequest,
   receiptExactnessError,
+  stampReceiptGap,
   validateParsedReceipt,
   validateClaimRequest,
   resolveRosterName,
@@ -509,4 +510,79 @@ test('validateSplitCreateRequest: the saved rounding flag must be true or false 
   assert.equal(validateSplitCreateRequest(body), null);
   body.totals = { ...body.totals, rounding_edited: 'yes' };
   assert.match(validateSplitCreateRequest(body), /rounding flag/i);
+});
+
+// ---- the host's acknowledgement of a difference on the receipt ----------
+// exactBody() adds up to 104.95. Raising the printed grand total by 3 sen
+// leaves a difference of +3 sen; lowering it leaves -3 sen.
+const gapBody = (gapCents, mark = {}) =>
+  exactBody({ grand_total: (10495 + gapCents) / 100, ...mark });
+const tick = (gapCents) => ({ receipt_gap_cents: gapCents, receipt_gap_acknowledged: true });
+
+test('receiptExactnessError: a difference with the tick and the exact stated amount is accepted, either sign', () => {
+  for (const gap of [3, -3, 1, -100]) {
+    assert.equal(receiptExactnessError(gapBody(gap, tick(gap))), null, `gap ${gap}`);
+  }
+});
+
+test('receiptExactnessError: a difference without the tick is refused', () => {
+  assert.equal(receiptExactnessError(gapBody(3)).code, 'receipt_does_not_add_up');
+  assert.equal(
+    receiptExactnessError(gapBody(3, { receipt_gap_acknowledged: false, receipt_gap_cents: 3 })).code,
+    'receipt_does_not_add_up'
+  );
+  assert.equal(receiptExactnessError(gapBody(3, { receipt_gap_acknowledged: true })).code, 'receipt_does_not_add_up');
+});
+
+test('receiptExactnessError: a tick with the wrong amount or the wrong sign is refused', () => {
+  assert.equal(receiptExactnessError(gapBody(3, tick(2))).code, 'receipt_does_not_add_up');
+  assert.equal(receiptExactnessError(gapBody(3, tick(-3))).code, 'receipt_does_not_add_up');
+  assert.equal(receiptExactnessError(gapBody(3, tick(0))).code, 'receipt_does_not_add_up');
+});
+
+test('receiptExactnessError: a tick when the receipt adds up is refused', () => {
+  assert.equal(receiptExactnessError(exactBody({ receipt_gap_acknowledged: true })).code, 'receipt_does_not_add_up');
+  assert.equal(receiptExactnessError(exactBody(tick(0))).code, 'receipt_does_not_add_up');
+  assert.equal(receiptExactnessError(exactBody({ receipt_gap_cents: 5 })).code, 'receipt_does_not_add_up');
+});
+
+test('receiptExactnessError: every impossible figure is refused even with the tick', () => {
+  const overItem = exactBody({ discount: 0, rounding: 0, grand_total: 109.2 + 0.03, service_charge: 9.2, tax: 0, ...tick(3) }, [dish('a', 40, 41), dish('b', 60, 0)]);
+  assert.equal(receiptExactnessError(overItem).code, 'discount_exceeds_item');
+  const overBill = exactBody({ discount: 100.01, grand_total: 14.93 + 0.03, ...tick(3) });
+  assert.equal(receiptExactnessError(overBill).code, 'bill_discount_exceeds_items');
+  const negative = exactBody({ discount: 0, rounding: 0, grand_total: 114.94 - 55 + 0.03, ...tick(3) }, [dish('a', -5, 0), dish('b', 60, 0)]);
+  assert.equal(receiptExactnessError(negative).code, 'negative_item_line');
+});
+
+test('receiptExactnessError: an older payload is not checked, whatever difference fields it carries', () => {
+  const old = { items: [dish('a', 10)], totals: { subtotal: 10, service_charge: 0, tax: 0, grand_total: 999, receipt_gap_acknowledged: true } };
+  assert.equal(receiptExactnessError(old), null);
+});
+
+test('stampReceiptGap: the server writes its own figure and drops anything the client sent', () => {
+  const stamped = stampReceiptGap(gapBody(3, tick(3)));
+  assert.equal(stamped.receipt_gap_cents, 3);
+  assert.equal(stamped.receipt_gap_acknowledged, true);
+  // A clean receipt, or an older payload: no marker at all.
+  assert.equal('receipt_gap_cents' in stampReceiptGap(exactBody()), false);
+  assert.equal('receipt_gap_acknowledged' in stampReceiptGap(exactBody({ receipt_gap_cents: 9 })), false);
+  const old = { items: [dish('a', 10)], totals: { subtotal: 10, service_charge: 0, tax: 0, grand_total: 10, receipt_gap_cents: 4, receipt_gap_acknowledged: true } };
+  assert.equal('receipt_gap_cents' in stampReceiptGap(old), false);
+  // Not mutated.
+  const body = gapBody(3, tick(3));
+  stampReceiptGap(body);
+  assert.equal(body.totals.receipt_gap_cents, 3);
+});
+
+test('validateSplitCreateRequest: the difference fields must be a boolean and a whole number when present', () => {
+  const body = validSplitBody();
+  body.totals = { ...body.totals, ...tick(3) };
+  assert.equal(validateSplitCreateRequest(body), null);
+  body.totals = { ...body.totals, receipt_gap_acknowledged: 'yes' };
+  assert.match(validateSplitCreateRequest(body), /difference flag/i);
+  body.totals = { ...body.totals, receipt_gap_acknowledged: true, receipt_gap_cents: 1.5 };
+  assert.match(validateSplitCreateRequest(body), /difference/i);
+  body.totals = { ...body.totals, receipt_gap_cents: '3' };
+  assert.match(validateSplitCreateRequest(body), /difference/i);
 });

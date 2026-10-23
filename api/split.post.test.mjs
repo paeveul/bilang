@@ -456,3 +456,65 @@ test('scanned figures: reading the split back returns the same printed figures t
   assert.deepEqual(res.body.items, stored[0].items);
   splitRow = null;
 });
+
+const gapPostBody = (gapCents, mark = {}) =>
+  exactPostBody({ grand_total: (10495 + gapCents) / 100, ...mark });
+const gapMark = (gapCents) => ({ receipt_gap_cents: gapCents, receipt_gap_acknowledged: true });
+
+test('split POST: a ticked difference is stored with the server-stamped marker and shares that add to the printed total', async () => {
+  for (const gap of [3, -3]) {
+    stored.length = 0;
+    const { res } = await post(gapPostBody(gap, gapMark(gap)));
+    assert.equal(res.statusCode, 201, `gap ${gap}`);
+    const totals = stored[0].totals;
+    assert.equal(totals.receipt_gap_cents, gap);
+    assert.equal(totals.receipt_gap_acknowledged, true);
+    const cents = Object.values(totals.per_person).reduce((sum, v) => sum + Math.round(v * 100), 0);
+    assert.equal(cents + Math.round((totals.unclaimed || 0) * 100), 10495 + gap);
+    // Nothing printed is changed: the difference is not written into rounding or discount.
+    assert.equal(totals.rounding, 0.01);
+    assert.equal(totals.discount, 10);
+    assert.equal(totals.grand_total, (10495 + gap) / 100);
+  }
+});
+
+test('split POST: the difference is refused without the tick, with a wrong amount, or on a receipt that adds up', async () => {
+  const cases = [
+    gapPostBody(3),
+    gapPostBody(3, gapMark(2)),
+    gapPostBody(3, { receipt_gap_acknowledged: true }),
+    exactPostBody({ receipt_gap_acknowledged: true }),
+    exactPostBody(gapMark(0)),
+  ];
+  for (const body of cases) {
+    const { res } = await post(body);
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.code, 'receipt_does_not_add_up');
+  }
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: an impossible figure is refused even with the tick', async () => {
+  const body = gapPostBody(3, gapMark(3));
+  body.items[0].discount = 51;
+  const { res } = await post(body);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'discount_exceeds_item');
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: an older payload that carries a marker is stored with no marker at all', async () => {
+  const old = postBody();
+  old.totals = { ...old.totals, receipt_gap_cents: 9, receipt_gap_acknowledged: true };
+  const { res } = await post(old);
+  assert.equal(res.statusCode, 201);
+  assert.equal('receipt_gap_cents' in stored[0].totals, false);
+  assert.equal('receipt_gap_acknowledged' in stored[0].totals, false);
+});
+
+test('split POST: a receipt that adds up is stored with no marker', async () => {
+  const { res } = await post(exactPostBody());
+  assert.equal(res.statusCode, 201);
+  assert.equal('receipt_gap_cents' in stored[0].totals, false);
+  assert.equal('receipt_gap_acknowledged' in stored[0].totals, false);
+});

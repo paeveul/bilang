@@ -193,3 +193,43 @@ test('scanned figures: a claim leaves the printed discount, rounding, grand tota
     assert.equal(fresh[f], printed[f], f);
   }
 });
+
+test('claim on a split saved with an acknowledged difference: the marker stays and shares equal the create-time shares', async () => {
+  const { computeTotals } = require('./_lib/totals');
+  row.items = [
+    { id: 'i1', name: 'Nasi', category: 'food', qty: 1, unit_price: 50, line_total: 50, discount: 0 },
+    { id: 'i2', name: 'Mee', category: 'food', qty: 1, unit_price: 30, line_total: 30, discount: 0 },
+    { id: 'i3', name: 'Teh', category: 'drink', qty: 1, unit_price: 20, line_total: 20, discount: 0 },
+  ];
+  row.totals = {
+    subtotal: 100,
+    service_charge: 9,
+    tax: 5.94,
+    discount: 10,
+    rounding: 0.01,
+    grand_total: 104.98,
+    receipt_gap_cents: 3,
+    receipt_gap_acknowledged: true,
+    per_person: {},
+  };
+  await patch(claim('Ali', 'i1'));
+  await patch(claim('Bea', 'i2'));
+  const res = await patch(claim('Ali', 'i3', { sharedWith: ['Bea'] }));
+  assert.equal(res.statusCode, 200);
+  const stored = (await get('abc')).body.totals;
+  assert.equal(stored.receipt_gap_cents, 3);
+  assert.equal(stored.receipt_gap_acknowledged, true);
+  assert.equal(stored.grand_total, 104.98);
+  const expected = computeTotals(row.items, { i1: ['Ali'], i2: ['Bea'], i3: ['Ali', 'Bea'] }, stored, ['Ali', 'Bea']);
+  for (const name of ['Ali', 'Bea']) {
+    assert.equal(Math.round(stored.per_person[name] * 100), expected.perPerson[name].totalCents, name);
+  }
+  const sum = Object.values(stored.per_person).reduce((s, v) => s + Math.round(v * 100), 0);
+  assert.equal(sum + Math.round(stored.unclaimed * 100), 10498);
+});
+
+test('claim on a split with no marker (saved before the difference existed): totals are computed without one', async () => {
+  const res = await patch(claim('Ali'));
+  assert.equal(res.statusCode, 200);
+  assert.equal('receipt_gap_cents' in res.body.totals, false);
+});

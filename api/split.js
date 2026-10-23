@@ -17,6 +17,7 @@ const {
   generateSplitId,
   validateSplitCreateRequest,
   receiptExactnessError,
+  stampReceiptGap,
   validateClaimRequest,
   resolveRosterName,
 } = require('./_lib/validate');
@@ -110,8 +111,9 @@ async function handlePost(req, res) {
     return;
   }
 
-  // The receipt must add up exactly (cents, no tolerance) and no discount may
-  // exceed what it comes off. Refused with a code so the screen can say why.
+  // The receipt must add up exactly (cents, no tolerance), or carry the host's
+  // acknowledgement of the exact difference, and no discount may exceed what it
+  // comes off. Refused with a code so the screen can say why.
   const refusal = receiptExactnessError(req.body);
   if (refusal) {
     console.warn(`api/split.js POST refused: ${refusal.code}`);
@@ -126,7 +128,8 @@ async function handlePost(req, res) {
   const assignments = stripClaimedFlags(req.body.assignments);
   const id = generateSplitId();
 
-  const recomputed = recomputeSplitTotals({ ...req.body, assignments });
+  // The stored difference marker is the server's own figure, never the client's.
+  const recomputed = recomputeSplitTotals({ ...req.body, assignments, totals: stampReceiptGap(req.body) });
   const totals = recomputed.totals;
   if (recomputed.source === 'per_person') {
     console.log(`split ${id}: payers not sent, derived from totals.per_person`);

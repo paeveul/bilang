@@ -229,6 +229,14 @@ function validateSplitCreateRequest(body) {
   if (body.totals.rounding_edited !== undefined && typeof body.totals.rounding_edited !== 'boolean') {
     return 'Invalid rounding flag';
   }
+  // The host's tick and the stated difference, checked for shape here and for
+  // meaning in receiptExactnessError. The server never stores these as sent.
+  if (body.totals.receipt_gap_acknowledged !== undefined && typeof body.totals.receipt_gap_acknowledged !== 'boolean') {
+    return 'Invalid receipt difference flag';
+  }
+  if (body.totals.receipt_gap_cents !== undefined && !Number.isInteger(body.totals.receipt_gap_cents)) {
+    return 'Invalid receipt difference';
+  }
   if (body.payers !== undefined) {
     const payersError = payersListError(body.payers);
     if (payersError) return payersError;
@@ -271,9 +279,15 @@ const RECEIPT_REFUSALS = {
  *   discount_exceeds_item / negative_item_line / bill_discount_exceeds_items /
  *   receipt_does_not_add_up
  * A payload with none of the discount fields (an older client) is not checked:
- * it never claimed to follow the exact rule. Cents, no tolerance. The
- * "use this difference as rounding" action writes into `rounding`, so a host
- * adjustment passes this check by being part of the figures.
+ * it never claimed to follow the exact rule. Cents, no tolerance.
+ *
+ * The app never writes the difference into rounding or any printed figure. A
+ * receipt whose lines do not add up to its printed total is accepted only when
+ * the host has ticked that the screen matches the paper
+ * (`totals.receipt_gap_acknowledged: true`) AND the stated
+ * `totals.receipt_gap_cents` equals the server's own figure. A tick on a
+ * receipt that adds up is refused, and so is every impossible figure, ticked
+ * or not.
  */
 function receiptExactnessError(body) {
   const items = body && body.items;
@@ -284,8 +298,29 @@ function receiptExactnessError(body) {
   let code = null;
   if (itemError) code = itemError.code;
   else if (billDiscountExceedsItems(items, totals)) code = 'bill_discount_exceeds_items';
-  else if (result.differenceCents !== 0) code = 'receipt_does_not_add_up';
+  else {
+    const acknowledged = totals.receipt_gap_acknowledged === true;
+    if (result.differenceCents !== 0) {
+      if (!acknowledged || totals.receipt_gap_cents !== result.differenceCents) code = 'receipt_does_not_add_up';
+    } else if (acknowledged || (totals.receipt_gap_cents !== undefined && totals.receipt_gap_cents !== 0)) {
+      code = 'receipt_does_not_add_up';
+    }
+  }
   return code ? { code, error: RECEIPT_REFUSALS[code] } : null;
+}
+
+/**
+ * The totals to store: the client's own difference fields are dropped and, when
+ * the receipt carries an acknowledged difference, the server stamps both from
+ * its own recomputation. Call it after receiptExactnessError has passed. A
+ * payload that never claimed the exact rule (an older client) is returned with
+ * no marker at all.
+ */
+function stampReceiptGap(body) {
+  const { receipt_gap_cents, receipt_gap_acknowledged, ...rest } = body.totals;
+  const result = reconcileReceipt(body.items, body.totals);
+  if (!result.applicable || result.differenceCents === 0 || receipt_gap_acknowledged !== true) return rest;
+  return { ...rest, receipt_gap_cents: result.differenceCents, receipt_gap_acknowledged: true };
 }
 
 /**
@@ -418,6 +453,7 @@ module.exports = {
   validateParseRequest,
   validateSplitCreateRequest,
   receiptExactnessError,
+  stampReceiptGap,
   validateParsedReceipt,
   isValidPayersList,
   payersListError,
