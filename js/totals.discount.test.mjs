@@ -268,7 +268,7 @@ test('each share of each bill line is within 1 cent of exact proportion; persons
     // keeps its original, looser rule, so only the sum is asserted there.
     assert.equal(sumAll(r), grandCents, `run ${run}: persons + unclaimed must equal the grand total`);
 
-    const newPath = bill.discount !== 0 || bill.rounding !== 0;
+    const newPath = bill.discount !== 0 || bill.rounding !== 0 || items.some((it) => it.discount > 0);
     if (newPath && weightTotal > 0) {
       const lines = [
         ['discountCents', Math.round(bill.discount * 100)],
@@ -342,13 +342,13 @@ test('all items fully discounted with only service, or only tax', () => {
   assert.equal(sumAll(computeTotals(freeItems(), { f: ['A'] }, freeBill({ service_charge: 0, grand_total: 1.2 }), ['A'])), 120);
 });
 
-test('all items fully discounted with no service and no tax: unchanged, no new keys', () => {
+test('all items fully discounted with no service and no tax: nothing to share, total 0', () => {
   const r = computeTotals(freeItems(), { f: ['A'] }, freeBill({ service_charge: 0, tax: 0, grand_total: 0 }), ['A']);
   assert.equal(sumAll(r), 0);
-  assert.equal('discountCents' in r.unclaimed, false);
+  assert.equal(r.unclaimed.totalCents, 0);
 });
 
-test('a bill with a paid item next to a free one is still the original arithmetic', () => {
+test('a bill with a paid item next to a free one: the free item has no weight, the paid one carries service and tax', () => {
   const items = [
     { id: 'f', name: 'Free', line_total: 10, discount: 10 },
     { id: 'p', name: 'P', line_total: 10, discount: 0 },
@@ -356,7 +356,42 @@ test('a bill with a paid item next to a free one is still the original arithmeti
   const bill = freeBill({ subtotal: 20, grand_total: 12.2 });
   const r = computeTotals(items, { f: ['A'], p: ['B'] }, bill, ['A', 'B']);
   assert.equal(r.perPerson.B.totalCents, 1220);
+  assert.equal(r.perPerson.A.totalCents, 0);
+  assert.equal(sumAll(r), 1220);
+});
+
+test('item discount only, shared by three: service and tax shares are each within 1 cent of exact', () => {
+  const items = [{ id: 'x', name: 'X', line_total: 82.63, discount: 76.25 }];
+  const bill = { subtotal: 82.63, discount: 0, service_charge: 16.37, tax: 5.74, rounding: 0, grand_total: 28.49 };
+  assert.equal(reconcileReceipt(items, bill).matches, true);
+  const r = computeTotals(items, { x: ['B', 'C', 'E'] }, bill, ['B', 'C', 'E']);
+  // Each person's net item share is 2.13 / 2.13 / 2.12 (6.38 shared three ways).
+  for (const n of ['B', 'C', 'E']) {
+    const p = r.perPerson[n];
+    assert.ok(Math.abs(p.serviceCents - (1637 * p.itemsCents) / 638) < 1);
+    assert.ok(Math.abs(p.taxCents - (574 * p.itemsCents) / 638) < 1);
+  }
+  assert.equal(sumAll(r), 2849);
+});
+
+test('item discount only, no bill discount or rounding: sum is exact and unclaimed carries its share', () => {
+  const items = [
+    { id: 'x', name: 'X', line_total: 40, discount: 8 },
+    { id: 'y', name: 'Y', line_total: 60, discount: 0 },
+  ];
+  const bill = { subtotal: 100, discount: 0, service_charge: 9.2, tax: 0, rounding: 0, grand_total: 101.2 };
+  const r = computeTotals(items, { x: ['A'] }, bill, ['A', 'B']);
+  assert.equal(sumAll(r), 10120);
+  assert.equal(r.unclaimed.itemsCents, 6000);
+});
+
+test('no item discount, no bill discount, no rounding: original arithmetic, no new keys', () => {
+  const items = [{ id: 'a', name: 'A', line_total: 10, discount: 0 }, { id: 'b', name: 'B', line_total: 20 }];
+  const bill = { subtotal: 30, discount: 0, service_charge: 3, tax: 1.8, rounding: 0, grand_total: 34.8 };
+  const r = computeTotals(items, { a: ['A'], b: ['B'] }, bill, ['A', 'B']);
   assert.equal('discountCents' in r.unclaimed, false);
+  assert.equal('discountCents' in r.perPerson.A, false);
+  assert.equal(sumAll(r), 3480);
 });
 
 test('a whole-bill discount larger than the items total is refused by reconcileReceipt itself', () => {

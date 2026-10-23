@@ -231,10 +231,17 @@ function computeTotals(items, assignments, billTotals, payers) {
   const nothingToWeigh =
     itemizedSubtotalCents + unclaimedItemsCents === 0 && (billTaxCents !== 0 || billServiceCents !== 0);
 
-  if (billDiscountCents === 0 && billRoundingCents === 0 && !nothingToWeigh) {
-    // No bill-level discount and no rounding: the original tax / service
+  // Any discount (on an item or the whole bill) or rounding sends the bill
+  // through the largest-remainder allocator, so every person's share of every
+  // bill line is within 1 cent of exact. Only a bill with none of them keeps
+  // the original arithmetic.
+  const hasItemDiscount = items.some((item) => discountCentsOf(item.discount) > 0);
+  const useAllocator = billDiscountCents !== 0 || billRoundingCents !== 0 || hasItemDiscount || nothingToWeigh;
+
+  if (!useAllocator) {
+    // No discount of any kind and no rounding: the original tax / service
     // arithmetic, unchanged, so a bill without them gives exactly the figures
-    // it always did (an item discount already acts through the net item cents).
+    // it always did.
     //
     // Tax and service are computed only on claimed items. When some items are
     // unclaimed, the bill's tax and service are first divided between the claimed
@@ -276,7 +283,7 @@ function computeTotals(items, assignments, billTotals, payers) {
       });
     }
   } else {
-    // A bill-level discount or a rounding line is present. Weights are each
+    // A discount or a rounding line is present. Weights are each
     // person's net item cents; unclaimed items carry weight too (last slot).
     // Every bill line is split by the largest-remainder method, so each
     // person's share of each line is within 1 cent of exact, the shares plus
@@ -323,7 +330,7 @@ function computeTotals(items, assignments, billTotals, payers) {
       serviceCents: unclaimedServiceCents,
       // Present only when the bill has a discount or rounding, so a bill
       // without them reports the same unclaimed figures, same shape, as before.
-      ...(billDiscountCents !== 0 || billRoundingCents !== 0 || nothingToWeigh
+      ...(useAllocator
         ? { discountCents: unclaimedDiscountCents, roundingCents: unclaimedRoundingCents }
         : {}),
       totalCents:
