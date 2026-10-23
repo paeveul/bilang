@@ -178,7 +178,7 @@ test('one sen off: red status with the exact signed difference, Confirm off with
   assert.match(status().textContent, /Does not add up: RM 0\.01 short/);
   assert.match(status().textContent, /Your numbers come to RM 104\.95\. The receipt total is RM 104\.96\./);
   assert.equal(confirm().disabled, true);
-  assert.match(screen.getByTestId('reconcile-block-reason').textContent, /Confirm is off until the difference is RM 0\.00/);
+  assert.match(screen.getByTestId('reconcile-block-reason').textContent, /Tick that the screen matches your paper receipt, or fix the figure that is different/);
   await setGrandTotal(user, 104.94);
   assert.match(status().textContent, /Does not add up: RM 0\.01 over/);
   await setGrandTotal(user, 104.95);
@@ -406,7 +406,8 @@ test('the status is announced through one polite live region, after typing pause
   await waitFor(() => assert.match(live.textContent, /Does not add up: RM 0\.01 short/), { timeout: 3000 });
 });
 
-const POINTER = 'Check each amount against your paper receipt and fix the one that is different.';
+const POINTER =
+  'Check each amount against your paper receipt and fix the one that is different. If the screen already matches the paper, tick the box above Confirm.';
 
 test('a difference of any size shows the pointer to the paper receipt; it goes away once the receipt adds up', async () => {
   const user = userEvent.setup();

@@ -6,8 +6,9 @@
 import { computeTotals, toCents } from '../../js/totals.js';
 import { rekeyAssignments } from '../state/bill-reducer.js';
 import { cleanName } from './roster-validation.js';
+import { acknowledgedGapCents, billWithAcknowledgedGap } from './receipt-status.js';
 
-export function buildSplitPayload({ parsed, payers: rawPayers, assignments: rawAssignments, ownerPaymentHandle }) {
+export function buildSplitPayload({ parsed, payers: rawPayers, assignments: rawAssignments, ownerPaymentHandle, gapAck = null }) {
   // What the host saw is what is stored: trimmed, single spaces, no hidden
   // characters. Assignments are re-keyed to the cleaned spelling so they
   // still match the roster.
@@ -17,7 +18,10 @@ export function buildSplitPayload({ parsed, payers: rawPayers, assignments: rawA
     if (name !== payers[i]) renames[name] = payers[i];
   });
   const assignments = Object.keys(renames).length ? rekeyAssignments(rawAssignments, renames) : rawAssignments;
-  const { perPerson } = computeTotals(parsed.items, assignments, parsed, payers);
+  // A difference on the receipt is sent (and shared) only while the host's
+  // tick is valid, so the totals sent here match what the Review screen showed.
+  const gapCents = acknowledgedGapCents(parsed.items, parsed, gapAck);
+  const { perPerson } = computeTotals(parsed.items, assignments, billWithAcknowledgedGap(parsed.items, parsed, gapAck), payers);
   // Bill discount and rounding are sent only when the receipt carries them (an
   // older shape sends neither, and reads as 0 on the server). The saved edited
   // flag is true only for a scanned split where the host changed the rounding.
@@ -35,6 +39,7 @@ export function buildSplitPayload({ parsed, payers: rawPayers, assignments: rawA
       ...(parsed.discount !== undefined ? { discount: Math.abs(parsed.discount) } : {}),
       ...(parsed.rounding !== undefined ? { rounding: parsed.rounding } : {}),
       ...(roundingEdited ? { rounding_edited: true } : {}),
+      ...(gapCents !== 0 ? { receipt_gap_cents: gapCents, receipt_gap_acknowledged: true } : {}),
       per_person: Object.fromEntries(
         Object.entries(perPerson).map(([name, p]) => [name, Math.round(p.totalCents) / 100])
       ),

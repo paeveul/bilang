@@ -17,7 +17,8 @@ import {
   percentToCents,
   toCents,
 } from '../../js/totals.js';
-import { computeReceiptStatus } from './receipt-status.js';
+import { acknowledgedGapCents, billWithAcknowledgedGap, computeReceiptStatus } from './receipt-status.js';
+import { moneySignature } from '../state/money-signature.js';
 import { ItemDiscountLine, itemNetRM } from './discount-lines.js';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
 import { validateItems } from './review-validation.js';
@@ -109,6 +110,8 @@ function statusHeadline(status) {
       return `Fix the price on ${status.itemName} first.`;
     case 'bill_discount_too_big':
       return 'Discount is more than the items total';
+    case 'ticked':
+      return t('panel.ticked.title');
     case 'off':
       return `Does not add up: ${formatRMLocked(fromCents(Math.abs(status.differenceCents)))} ${status.direction}`;
     default:
@@ -134,7 +137,7 @@ const ADD_BUTTON_CLASS =
 const TEXT_BUTTON_CLASS = 'text-sm text-slate-700 underline min-h-[48px] px-2';
 
 export default function ReviewScreen() {
-  const { parsed, payers, assignments, claimMode, derived } = useBillState();
+  const { parsed, payers, assignments, claimMode, derived, gapAck, gapAckCleared, saveError } = useBillState();
   const {
     goToScreen,
     updateItemField,
@@ -146,6 +149,9 @@ export default function ReviewScreen() {
     setItemMode,
     setItemManualUnit,
     setItemManualValue,
+    setGapAck,
+    clearGapAck,
+    clearSaveError,
   } = useBillActions();
 
   const items = parsed?.items ?? [];
@@ -179,7 +185,11 @@ export default function ReviewScreen() {
   }, [derived]);
   const billRefs = useRef({});
 
-  const receiptStatus = parsed ? computeReceiptStatus(parsed.items ?? [], parsed) : null;
+  // The host's tick counts only while it is valid (see money-signature.js).
+  // A ticked receipt that does not add up reads as 'ticked' and no longer
+  // blocks Confirm; an impossible figure still does.
+  const tickValid = parsed ? acknowledgedGapCents(parsed.items ?? [], parsed, gapAck) !== 0 : false;
+  const receiptStatus = parsed ? computeReceiptStatus(parsed.items ?? [], parsed, { ticked: tickValid }) : null;
   const statusText = receiptStatus ? statusHeadline(receiptStatus) : '';
   // The screen-reader copy of the status waits until typing pauses, so it is
   // read once, not on every digit. The colour and numbers update at once.
@@ -192,6 +202,11 @@ export default function ReviewScreen() {
     const t = setTimeout(() => setLiveText(liveNote ? `${liveNote} ${statusText}` : statusText), wait);
     return () => clearTimeout(t);
   }, [statusText, liveNote]);
+
+  const saveErrorRef = useRef(null);
+  useEffect(() => {
+    if (saveError === 'receipt_does_not_add_up') saveErrorRef.current?.focus();
+  }, [saveError]);
 
   useEffect(() => {
     if (!parsed) return;
@@ -268,7 +283,9 @@ export default function ReviewScreen() {
     );
   }
 
-  const { perPerson } = computeTotals(items, assignments, parsed, payers);
+  // Per-person totals follow the rows on screen: the receipt difference is
+  // shared only once the host has ticked it (and it then shows as its own row).
+  const { perPerson } = computeTotals(items, assignments, billWithAcknowledgedGap(items, parsed, gapAck), payers);
 
   const unresolvedCount = items.filter((item) => {
     const assignment = assignments[item.id];
@@ -956,7 +973,20 @@ export default function ReviewScreen() {
               </div>
             </div>
           )}
-          <div className={`space-y-1${showRoundingRow ? ' col-span-2' : ''}`}>
+          {receiptStatus.kind === 'ticked' && (
+            <div className="col-span-2 space-y-1" data-testid="difference-row">
+              <div className="flex justify-between gap-3 text-sm">
+                <span className="text-xs text-slate-600">{t('diff.label')}</span>
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-800">
+                  {t(receiptStatus.differenceCents > 0 ? 'diff.adds' : 'diff.takes_off', {
+                    amount: formatRMLocked(fromCents(Math.abs(receiptStatus.differenceCents))),
+                  })}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600">{t('diff.helper.review')}</p>
+            </div>
+          )}
+          <div className={`space-y-1${showRoundingRow || receiptStatus.kind === 'ticked' ? ' col-span-2' : ''}`}>
             <label className="space-y-1 block">
               <span className="text-xs text-slate-500">Grand total</span>
               <input
@@ -1009,11 +1039,13 @@ export default function ReviewScreen() {
           <>
             <div
               data-testid="reconcile-status"
-              data-state={receiptStatus.kind === 'ok' ? 'ok' : 'error'}
+              data-state={receiptStatus.kind === 'ok' ? 'ok' : receiptStatus.kind === 'ticked' ? 'ticked' : 'error'}
               className={
                 receiptStatus.kind === 'ok'
                   ? 'rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm p-3 space-y-1'
-                  : 'rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3 space-y-2'
+                  : receiptStatus.kind === 'ticked'
+                    ? 'rounded-lg bg-slate-50 border border-slate-300 text-slate-800 text-sm p-3 space-y-1'
+                    : 'rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3 space-y-2'
               }
             >
               {receiptStatus.kind === 'ok' && (
@@ -1042,7 +1074,20 @@ export default function ReviewScreen() {
                     {formatRMLocked(fromCents(receiptStatus.grandTotalCents))}.
                   </p>
                   {receiptStatus.hint && <p data-testid="reconcile-hint">{hintText(receiptStatus.hint)}</p>}
-                  <p data-testid="reconcile-pointer">Check each amount against your paper receipt and fix the one that is different.</p>
+                  <p data-testid="reconcile-pointer">{t('panel.pointer')}</p>
+                </>
+              )}
+              {receiptStatus.kind === 'ticked' && (
+                <>
+                  <p className="font-semibold">
+                    <span aria-hidden="true">✓ </span>
+                    {t('panel.ticked.title')}
+                  </p>
+                  <p>
+                    {t(receiptStatus.differenceCents > 0 ? 'panel.ticked.adds' : 'panel.ticked.takes_off', {
+                      amount: formatRMLocked(fromCents(Math.abs(receiptStatus.differenceCents))),
+                    })}
+                  </p>
                 </>
               )}
             </div>
@@ -1102,6 +1147,64 @@ export default function ReviewScreen() {
         </div>
       )}
 
+      {saveError === 'receipt_does_not_add_up' && (
+        <div
+          role="alert"
+          tabIndex={-1}
+          ref={saveErrorRef}
+          data-testid="save-not-add-up"
+          className="rounded-md bg-red-50 border border-red-200 text-red-700 text-sm p-3"
+        >
+          {t('error.save_not_add_up')}
+        </div>
+      )}
+
+      {(receiptStatus.kind === 'off' || receiptStatus.kind === 'ticked') && (
+        <div className="space-y-1" data-testid="receipt-tick-block">
+          <label
+            className={`flex items-start gap-3 rounded-lg border p-3 min-h-[48px] w-full cursor-pointer ${
+              tickValid ? 'border-slate-800 bg-slate-50' : 'border-slate-300 bg-white'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={tickValid}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  clearSaveError();
+                  setGapAck(moneySignature(parsed), receiptStatus.differenceCents);
+                } else {
+                  clearGapAck();
+                }
+              }}
+              aria-labelledby="tick-label"
+              aria-describedby="tick-detail tick-consequence"
+              className="mt-0.5 h-6 w-6 shrink-0 accent-slate-800"
+            />
+            <span className="space-y-1">
+              <span id="tick-label" className="block text-sm font-semibold text-slate-900">
+                {t('tick.label')}
+              </span>
+              <span id="tick-detail" className="block text-sm text-slate-700">
+                {t(receiptStatus.differenceCents > 0 ? 'tick.detail.higher' : 'tick.detail.lower', {
+                  amount: formatRMLocked(fromCents(Math.abs(receiptStatus.differenceCents))),
+                })}
+              </span>
+              <span id="tick-consequence" className="block text-xs text-slate-600">
+                {t('tick.consequence', {
+                  amount: formatRMLocked(fromCents(Math.abs(receiptStatus.differenceCents))),
+                })}
+              </span>
+            </span>
+          </label>
+          {gapAckCleared && !tickValid && (
+            <p role="status" className="text-xs text-slate-600" data-testid="tick-cleared-note">
+              {t('tick.cleared')}
+            </p>
+          )}
+        </div>
+      )}
+
       <motion.button
         type="button"
         onClick={handleConfirm}
@@ -1114,7 +1217,7 @@ export default function ReviewScreen() {
       </motion.button>
       {reconcileBlocked && (
         <p className="text-sm text-slate-600 text-center" data-testid="reconcile-block-reason">
-          Confirm is off until the difference is RM 0.00. See Bill totals above.
+          {receiptStatus.hardError ? t('confirm.reason.hard_error') : t('confirm.reason.needs_tick')}
         </p>
       )}
       {!rosterValid && (

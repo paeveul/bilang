@@ -16,7 +16,9 @@ export class SessionExpiredError extends Error {
 function failureFor(data, fallbackMessage) {
   const message = data.error || fallbackMessage;
   if (data.code === 'session_expired') return new SessionExpiredError(message, data);
-  return new Error(message);
+  const error = new Error(message);
+  if (data.code) error.code = data.code;
+  return error;
 }
 
 /**

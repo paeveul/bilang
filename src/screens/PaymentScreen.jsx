@@ -7,9 +7,16 @@ import { buildSplitPayload } from './split-payload.js';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 
+const RECEIPT_REFUSAL_CODES = [
+  'receipt_does_not_add_up',
+  'discount_exceeds_item',
+  'negative_item_line',
+  'bill_discount_exceeds_items',
+];
+
 export default function PaymentScreen() {
-  const { parsed, payers, assignments } = useBillState();
-  const { goToScreen, setPaymentHandle, setShareUrl, setError } = useBillActions();
+  const { parsed, payers, assignments, gapAck } = useBillState();
+  const { goToScreen, setPaymentHandle, setShareUrl, setError, setSaveError } = useBillActions();
   const { runWithSession } = useAuth();
   const [handle, setHandle] = useState('');
   const [validationError, setValidationError] = useState('');
@@ -26,11 +33,18 @@ export default function PaymentScreen() {
     goToScreen('creating');
 
     try {
-      const payload = buildSplitPayload({ parsed, payers, assignments, ownerPaymentHandle: trimmed });
+      const payload = buildSplitPayload({ parsed, payers, assignments, ownerPaymentHandle: trimmed, gapAck });
       const { url } = await runWithSession(() => createSplit(payload));
       setShareUrl(`${window.location.origin}${url}`);
       goToScreen('share');
     } catch (err) {
+      if (RECEIPT_REFUSAL_CODES.includes(err.code)) {
+        // The server's check of the receipt is the truth: back to Review with
+        // everything the host typed, and the tick cleared.
+        setSaveError(err.code);
+        goToScreen('review');
+        return;
+      }
       setError(err.message || 'Could not create this split.');
     }
   }

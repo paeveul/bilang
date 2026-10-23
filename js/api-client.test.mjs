@@ -88,3 +88,12 @@ test('getSplit stays anonymous: a normal 200 comes back unchanged', async () => 
   assert.deepEqual(split, { id: 'abc', version: 2 });
   assert.equal(calls[0].url, '/api/v1/split?id=abc');
 });
+
+test('createSplit refused for figures that do not add up: the error carries the server code', async () => {
+  nextResponse = () => jsonResponse(400, { error: 'The amounts do not add up to the receipt total.', code: 'receipt_does_not_add_up' });
+  await assert.rejects(createSplit({ items: [] }), (err) => {
+    assert.equal(err.code, 'receipt_does_not_add_up');
+    assert.match(err.message, /do not add up/);
+    return true;
+  });
+});

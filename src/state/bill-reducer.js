@@ -1,5 +1,6 @@
 import { centsToPercent, fromCents, lineTotalFromQty, toCents } from '../../js/totals.js';
 import { sameName } from '../../api/_lib/name-rule.js';
+import { moneySignature } from './money-signature.js';
 
 export const initialState = {
   screen: 'landing',
@@ -19,6 +20,14 @@ export const initialState = {
   // not a whole sen and was settled to the nearest sen) or 'kept' (the host
   // typed the price). Kept apart from `parsed` so none of it is ever sent.
   derived: { lines: {}, subtotalMoved: false },
+  // The host's tick that the screen matches the paper receipt: the money
+  // fingerprint and the difference it was ticked at, or null. It clears itself
+  // on any edit that changes the fingerprint (see reducer below).
+  gapAck: null,
+  // True after an edit cleared a tick, so the screen can say so.
+  gapAckCleared: false,
+  // Set when a save was refused because the figures did not add up.
+  saveError: null,
   ownerPaymentHandle: '',
   errorMessage: '',
   shareUrl: '',
@@ -149,8 +158,42 @@ export function nextItemId() {
   return `item-${itemIdCounter}`;
 }
 
+/**
+ * Wraps the main reducer: a tick lasts only while the money fingerprint is the
+ * one it was made at, and a refused-save message lasts only until the next
+ * change to the money. Reassigning who ordered an item changes neither.
+ */
 export function reducer(state, action) {
+  const next = baseReducer(state, action);
+  if (next === state || !next.parsed) return next;
+  if (!next.gapAck && !next.saveError) return next;
+  const signature = moneySignature(next.parsed);
+  let out = next;
+  if (out.gapAck && out.gapAck.signature !== signature) {
+    out = { ...out, gapAck: null, gapAckCleared: true };
+  }
+  if (out.saveError && state.parsed && moneySignature(state.parsed) !== signature) {
+    out = { ...out, saveError: null };
+  }
+  return out;
+}
+
+function baseReducer(state, action) {
   switch (action.type) {
+    case 'SET_GAP_ACK':
+      return {
+        ...state,
+        gapAck: { signature: action.signature, gapCents: action.gapCents },
+        gapAckCleared: false,
+        saveError: null,
+      };
+    case 'CLEAR_GAP_ACK':
+      return { ...state, gapAck: null, gapAckCleared: false };
+    case 'SET_SAVE_ERROR':
+      // A refused save also clears the tick: the server's figure is the truth.
+      return { ...state, saveError: action.code, gapAck: null, gapAckCleared: false };
+    case 'CLEAR_SAVE_ERROR':
+      return state.saveError ? { ...state, saveError: null } : state;
     case 'GO_TO_SCREEN':
       return { ...state, screen: action.screen };
     case 'SET_RECEIPT':
@@ -168,7 +211,14 @@ export function reducer(state, action) {
         action.parsed.rounding !== undefined || action.parsed.discount !== undefined
           ? { scanned_rounding: Number.isFinite(action.parsed.rounding) ? action.parsed.rounding : 0 }
           : {};
-      return { ...state, parsed: { ...action.parsed, ...scanned, items }, derived: { lines: {}, subtotalMoved: false } };
+      return {
+        ...state,
+        parsed: { ...action.parsed, ...scanned, items },
+        derived: { lines: {}, subtotalMoved: false },
+        gapAck: null,
+        gapAckCleared: false,
+        saveError: null,
+      };
     }
     case 'ADD_PAYER': {
       const keys = assignmentKeys(state);
