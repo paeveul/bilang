@@ -5,7 +5,8 @@
 // Nothing is rendered at zero: a bill with no discount and no rounding looks
 // exactly as it did before these lines existed.
 import { createElement as h } from 'react';
-import { formatRMLocked, fromCents, itemNetCents, toCents } from '../../js/totals.js';
+import { formatRMLocked, fromCents, itemNetCents, receiptGapCentsOf, toCents } from '../../js/totals.js';
+import { t } from '../strings/receipt-check-strings.js';
 
 /** An item's own discount in cents, zero or positive; a missing field reads as 0. */
 export function itemDiscountCents(item) {
@@ -31,7 +32,7 @@ export function itemNetRM(item) {
   return fromCents(itemNetCents(item));
 }
 
-function BillLine({ label, spoken, visible, testId }) {
+function BillLine({ label, spoken, visible, testId, helper = 'Shared by what each person ordered.' }) {
   return h(
     'div',
     { className: 'space-y-0.5', 'data-testid': testId },
@@ -46,19 +47,21 @@ function BillLine({ label, spoken, visible, testId }) {
         h('span', { className: 'sr-only' }, spoken)
       )
     ),
-    h('p', { className: 'text-xs text-slate-600' }, 'Shared by what each person ordered.')
+    h('p', { className: 'text-xs text-slate-600' }, helper)
   );
 }
 
 /**
- * The bill-level lines under the last item: "Discount" and "Rounding", each
- * only when non-zero. `totals` is the split's stored totals (old splits have
+ * The bill-level lines under the last item: "Discount", "Rounding" and
+ * "Difference on receipt" (the amount the host ticked as printed on the paper
+ * but not explained by its lines), each only when non-zero. `totals` is the split's stored totals (old splits have
  * neither field). "(set by host)" shows only when the saved edited flag is set.
  */
 export function PayerBillLines({ totals }) {
   const discount = Math.abs(toCents(totals && totals.discount));
   const rounding = toCents(totals && totals.rounding);
-  if (discount === 0 && rounding === 0) return null;
+  const gap = receiptGapCentsOf(totals);
+  if (discount === 0 && rounding === 0 && gap === 0) return null;
   const rows = [];
   if (discount !== 0) {
     const amount = formatRMLocked(fromCents(discount));
@@ -82,6 +85,21 @@ export function PayerBillLines({ totals }) {
         label: edited ? 'Rounding (set by host)' : 'Rounding',
         visible: `${rounding > 0 ? '+' : '−'}${amount}`,
         spoken: `Rounding, ${rounding > 0 ? 'plus' : 'minus'} ${amount}`,
+      })
+    );
+  }
+  if (gap !== 0) {
+    // Signed so a payer can tell a charge from a credit. No "(set by host)" tag:
+    // that belongs to Rounding only.
+    const amount = formatRMLocked(fromCents(Math.abs(gap)));
+    rows.push(
+      h(BillLine, {
+        key: 'difference',
+        testId: 'payer-difference-line',
+        label: t('diff.label'),
+        visible: `${gap > 0 ? '+' : '−'}${amount}`,
+        spoken: `${t('diff.label')}, ${gap > 0 ? 'plus' : 'minus'} ${amount}`,
+        helper: t('diff.helper.payer'),
       })
     );
   }
