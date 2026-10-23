@@ -80,8 +80,6 @@ export default function RosterEditor({ showErrors, onTouch, showChangeNotes = fa
     setClashRevealed(true);
     const count = Math.max(1, nextCount);
     if (count === payers.length) return;
-    // Any change in head-count makes an open "Clear and switch?" question stale.
-    setPendingSwitch(false);
 
     if (count > payers.length) {
       if (payers.length === 1 && payers[0] === 'Me') renamePayer(0, '');

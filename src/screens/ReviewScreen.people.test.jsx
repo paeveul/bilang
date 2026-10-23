@@ -332,16 +332,33 @@ test('H7: answering the question closes it for good, including after later chang
   assert.equal(screen.queryByTestId('mode-switch-confirm'), null, 'switching back asks nothing');
 });
 
-test('H7: changing the head-count while the question is open closes it, even if people stay at 2 or more', async () => {
+test('AC-M9: adding a person while the question is open keeps it', async () => {
   const user = userEvent.setup();
   renderReview({ extraPeople: ['Ben'] });
   await openSwitchQuestion(user);
   await user.click(screen.getByLabelText('More people')); // 2 -> 3
-  assert.equal(screen.queryByTestId('mode-switch-confirm'), null);
+  assert.ok(screen.getByTestId('mode-switch-confirm'), 'the question stays');
+  assert.ok(screen.getByTestId('mode-switch-waiting-tag'), 'the Waiting tag stays');
+  assert.equal(radioA().getAttribute('aria-checked'), 'true', 'mode is still A');
+  assert.equal(radioB().getAttribute('aria-checked'), 'false');
   assert.equal(storedPayers().length, 3);
-  // Asking again still works normally.
-  await user.click(screen.getByRole('radio', { name: /Let everyone pick their own/ }));
-  assert.ok(screen.getByTestId('mode-switch-confirm'), 'a fresh tap asks afresh');
+  assert.ok(screen.getByText('Assigned: Me'), 'the hand-set item is untouched');
+  await user.click(screen.getByRole('button', { name: 'Clear and switch' }));
+  assert.equal(radioB().getAttribute('aria-checked'), 'true', 'mode is now B');
+  assert.equal(screen.queryByText('Assigned: Me'), null);
+  assert.equal(screen.getAllByText('Not yet claimed').length, 2, 'every item is not yet claimed');
+  assert.equal(storedPayers().length, 3);
+});
+
+test('AC-M9: removing a person (3 to 2) keeps the question', async () => {
+  const user = userEvent.setup();
+  renderReview({ extraPeople: ['Ben', 'Cara'] });
+  await openSwitchQuestion(user);
+  await user.click(screen.getByLabelText('Fewer people')); // 3 -> 2
+  assert.ok(screen.getByTestId('mode-switch-confirm'), 'the question stays');
+  assert.ok(screen.getByTestId('mode-switch-waiting-tag'), 'the Waiting tag stays');
+  assert.equal(radioA().getAttribute('aria-checked'), 'true', 'mode is still A');
+  assert.equal(storedPayers().length, 2);
 });
 
 // --- H8: the question's own taps, look and notes (AC-M1 to AC-M12) ----------
