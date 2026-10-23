@@ -16,6 +16,7 @@ const { sendBadRequest, hasJsonContentType } = require('./_lib/bad-request');
 const {
   generateSplitId,
   validateSplitCreateRequest,
+  receiptExactnessError,
   validateClaimRequest,
   resolveRosterName,
 } = require('./_lib/validate');
@@ -106,6 +107,15 @@ async function handlePost(req, res) {
   if (validationError) {
     console.warn('api/split.js POST refused:', validationError);
     res.status(400).json({ error: validationError });
+    return;
+  }
+
+  // The receipt must add up exactly (cents, no tolerance) and no discount may
+  // exceed what it comes off. Refused with a code so the screen can say why.
+  const refusal = receiptExactnessError(req.body);
+  if (refusal) {
+    console.warn(`api/split.js POST refused: ${refusal.code}`);
+    res.status(400).json({ error: refusal.error, code: refusal.code });
     return;
   }
 

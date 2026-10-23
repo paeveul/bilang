@@ -356,3 +356,74 @@ test('split POST: a roster with a hidden character returns 400 with a plain mess
   assert.deepEqual(res.body, { error: 'A name has hidden characters. Retype it.' });
   assert.equal(stored.length, 0);
 });
+
+function exactPostBody(totalsExtra = {}, bodyExtra = {}) {
+  return postBody({
+    items: [
+      { id: 'i1', name: 'Nasi', category: 'food', qty: 1, unit_price: 50, line_total: 50, discount: 0 },
+      { id: 'i2', name: 'Mee', category: 'food', qty: 1, unit_price: 30, line_total: 30, discount: 0 },
+      { id: 'i3', name: 'Teh', category: 'drink', qty: 1, unit_price: 20, line_total: 20, discount: 0 },
+    ],
+    assignments: { i1: ['Ali'], i2: ['Bea'], i3: ['Ali', 'Bea'] },
+    totals: {
+      subtotal: 100,
+      service_charge: 9,
+      tax: 5.94,
+      discount: 10,
+      rounding: 0.01,
+      grand_total: 104.95,
+      per_person: {},
+      ...totalsExtra,
+    },
+    ...bodyExtra,
+  });
+}
+
+test('split POST: a receipt that adds up exactly is stored, shares add to the printed total', async () => {
+  const { res } = await post(exactPostBody());
+  assert.equal(res.statusCode, 201);
+  const per = stored[0].totals.per_person;
+  const cents = Object.values(per).reduce((sum, v) => sum + Math.round(v * 100), 0);
+  const unclaimed = Math.round((stored[0].totals.unclaimed || 0) * 100);
+  assert.equal(cents + unclaimed, 10495);
+  assert.equal(stored[0].totals.discount, 10);
+  assert.equal(stored[0].totals.rounding, 0.01);
+});
+
+test('split POST: one sen out is refused with a code, nothing stored', async () => {
+  for (const grand of [104.96, 104.94]) {
+    const { res } = await post(exactPostBody({ grand_total: grand }));
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.code, 'receipt_does_not_add_up');
+  }
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: a bill discount above the items total is refused with its own code', async () => {
+  const { res } = await post(exactPostBody({ discount: 150, rounding: 0, grand_total: 0 }));
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'bill_discount_exceeds_items');
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: an item discount above its price is refused with its own code', async () => {
+  const body = exactPostBody();
+  body.items[0].discount = 51;
+  const { res } = await post(body);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.code, 'discount_exceeds_item');
+  assert.equal(stored.length, 0);
+});
+
+test('split POST: a host-adjusted rounding that makes the receipt add up is accepted and the edited flag is saved', async () => {
+  const { res } = await post(exactPostBody({ rounding: 0.04, rounding_edited: true, grand_total: 104.98 }));
+  assert.equal(res.statusCode, 201);
+  assert.equal(stored[0].totals.rounding_edited, true);
+});
+
+test('split POST: an older payload with none of the new fields still goes through unchanged', async () => {
+  const { res } = await post(postBody());
+  assert.equal(res.statusCode, 201);
+  assert.equal(stored[0].totals.discount, undefined);
+  assert.equal(stored[0].totals.rounding_edited, undefined);
+});

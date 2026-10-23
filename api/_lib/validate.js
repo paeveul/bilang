@@ -6,6 +6,7 @@
 
 const crypto = require('crypto');
 const { nameKey, hasHiddenChars } = require('./name-rule');
+const { reconcileReceipt, billDiscountExceedsItems } = require('./totals');
 
 const MAX_IMAGE_BASE64_CHARS = 8_000_000; // ~6MB raw image, generous for a phone photo
 const MAX_ITEMS = 100;
@@ -224,6 +225,10 @@ function validateSplitCreateRequest(body) {
   if (body.totals.rounding !== undefined && !isFiniteNumber(body.totals.rounding)) {
     return 'Invalid rounding';
   }
+  // Saved with the split so the payer view can say the host set the rounding.
+  if (body.totals.rounding_edited !== undefined && typeof body.totals.rounding_edited !== 'boolean') {
+    return 'Invalid rounding flag';
+  }
   if (body.payers !== undefined) {
     const payersError = payersListError(body.payers);
     if (payersError) return payersError;
@@ -250,6 +255,37 @@ function validateSplitCreateRequest(body) {
     return 'Payment details field is too long';
   }
   return null;
+}
+
+const RECEIPT_REFUSALS = {
+  discount_exceeds_item: 'An item discount is more than the item price.',
+  negative_item_line: 'An item price is below zero.',
+  bill_discount_exceeds_items: 'The discount is more than the items total.',
+  receipt_does_not_add_up: 'The amounts do not add up to the receipt total.',
+};
+
+/**
+ * The exact receipt check at create time. Run it after validateSplitCreateRequest.
+ * Returns null when the split may be created, or `{ code, error }` for the
+ * first reason it may not:
+ *   discount_exceeds_item / negative_item_line / bill_discount_exceeds_items /
+ *   receipt_does_not_add_up
+ * A payload with none of the discount fields (an older client) is not checked:
+ * it never claimed to follow the exact rule. Cents, no tolerance. The
+ * "use this difference as rounding" action writes into `rounding`, so a host
+ * adjustment passes this check by being part of the figures.
+ */
+function receiptExactnessError(body) {
+  const items = body && body.items;
+  const totals = body && body.totals;
+  const result = reconcileReceipt(items, totals);
+  if (!result.applicable) return null;
+  const itemError = result.errors[0];
+  let code = null;
+  if (itemError) code = itemError.code;
+  else if (billDiscountExceedsItems(items, totals)) code = 'bill_discount_exceeds_items';
+  else if (result.differenceCents !== 0) code = 'receipt_does_not_add_up';
+  return code ? { code, error: RECEIPT_REFUSALS[code] } : null;
 }
 
 /**
@@ -381,6 +417,7 @@ module.exports = {
   generateSplitId,
   validateParseRequest,
   validateSplitCreateRequest,
+  receiptExactnessError,
   validateParsedReceipt,
   isValidPayersList,
   payersListError,

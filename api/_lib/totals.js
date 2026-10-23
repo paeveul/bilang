@@ -420,6 +420,17 @@ function reconcileReceipt(items, billTotals) {
 }
 
 /**
+ * True when the bill-level discount is more than what the items cost after
+ * their own discounts. A voucher cannot exceed what was ordered, so this is a
+ * misread or a double count. Equal is allowed.
+ */
+function billDiscountExceedsItems(items, billTotals) {
+  const list = Array.isArray(items) ? items : [];
+  const itemsNetCents = list.reduce((sum, item) => sum + itemNetCents(item), 0);
+  return discountCentsOf((billTotals || {}).discount) > itemsNetCents;
+}
+
+/**
  * The rounding (RM, signed) that would make the receipt add up exactly: the
  * current rounding plus the leftover difference. For the host's explicit
  * "use this difference as rounding" action; nothing calls it automatically.
@@ -485,6 +496,7 @@ module.exports = {
   itemNetCents,
   hasDiscountFields,
   reconcileReceipt,
+  billDiscountExceedsItems,
   suggestedRoundingRM,
   normalizeScanDiscounts,
 };
