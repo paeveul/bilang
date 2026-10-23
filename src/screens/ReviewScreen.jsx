@@ -23,6 +23,7 @@ import { useBillActions, useBillState } from '../state/BillContext.jsx';
 import { validateItems } from './review-validation.js';
 import ReviewPeopleRow from './ReviewPeopleRow.jsx';
 import { validateRoster } from './roster-validation.js';
+import { t } from '../strings/receipt-check-strings.js';
 
 const TAP_TRANSITION = { duration: 0.1 };
 const TAP_SCALE = { scale: 0.97 };
@@ -133,7 +134,7 @@ const ADD_BUTTON_CLASS =
 const TEXT_BUTTON_CLASS = 'text-sm text-slate-700 underline min-h-[48px] px-2';
 
 export default function ReviewScreen() {
-  const { parsed, payers, assignments, claimMode } = useBillState();
+  const { parsed, payers, assignments, claimMode, derived } = useBillState();
   const {
     goToScreen,
     updateItemField,
@@ -166,6 +167,16 @@ export default function ReviewScreen() {
   const [roundingSign, setRoundingSign] = useState(() => ((parsed?.rounding ?? 0) < 0 ? 'takes' : 'adds'));
   const [billFocus, setBillFocus] = useState(null); // 'discount' | 'rounding' | 'addDiscount' | 'addRounding'
   const [liveNote, setLiveNote] = useState('');
+  // After a host edit of an item, the changed line price and the subtotal
+  // carry a soft background for 600 ms. Printed fields never do. The colour
+  // change is instant, so reduced-motion needs no special case.
+  const [flashItemId, setFlashItemId] = useState(null);
+  useEffect(() => {
+    if (!derived || !derived.last) return undefined;
+    setFlashItemId(derived.last);
+    const timer = setTimeout(() => setFlashItemId(null), 600);
+    return () => clearTimeout(timer);
+  }, [derived]);
   const billRefs = useRef({});
 
   const receiptStatus = parsed ? computeReceiptStatus(parsed.items ?? [], parsed) : null;
@@ -439,6 +450,8 @@ export default function ReviewScreen() {
           const discountVisible = itemDiscountOpen.has(item.id) || itemDiscount > 0;
           const discountTooBig = toCents(itemDiscount) > toCents(item.line_total);
           const discountErrId = `${item.id}-discount-error`;
+          const cueKind = derived && derived.lines ? derived.lines[item.id] : undefined;
+          const cueId = `${item.id}-line-cue`;
           const itemOnlyProblems = fieldProblems.filter((p) => p.field !== 'discount');
           const a11y = (field) =>
             bad(field) ? { 'aria-invalid': true, 'aria-describedby': errId(field) } : {};
@@ -535,12 +548,24 @@ export default function ReviewScreen() {
                           min="0"
                           value={item.line_total}
                           onChange={(e) => updateItemField(item.id, 'line_total', Number(e.target.value) || 0)}
-                          className="w-full min-h-[48px]"
+                          className={`w-full min-h-[48px]${flashItemId === item.id ? ' bg-slate-100' : ''}`}
                           ref={(el) => registerFieldRef(item.id, 'line_total', el)}
                           {...a11y('line_total')}
+                          {...(cueKind
+                            ? {
+                                'aria-describedby': [bad('line_total') ? errId('line_total') : null, cueId]
+                                  .filter(Boolean)
+                                  .join(' '),
+                              }
+                            : {})}
                         />
                       </label>
                     </div>
+                    {cueKind && (
+                      <p id={cueId} data-testid="line-price-cue" className="text-xs text-slate-600">
+                        {t(cueKind === 'kept' ? 'calc.cue.kept' : cueKind === 'rounded' ? 'calc.cue.rounded' : 'calc.cue')}
+                      </p>
+                    )}
                     {itemDiscount > 0 && (
                       <p className="text-xs text-slate-600">Line total is the price before discount.</p>
                     )}
@@ -787,11 +812,11 @@ export default function ReviewScreen() {
                 value={parsed.subtotal}
                 onChange={(e) => updateBillField('subtotal', Number(e.target.value) || 0)}
                 aria-describedby="subtotal-note"
-                className="w-full min-h-[48px]"
+                className={`w-full min-h-[48px]${flashItemId && derived.subtotalMoved ? ' bg-slate-100' : ''}`}
               />
             </label>
             <p id="subtotal-note" className="text-xs text-slate-600">
-              For your reference
+              {derived && derived.subtotalMoved ? t('subtotal.moved') : 'For your reference'}
             </p>
           </div>
           {showDiscountRow && (

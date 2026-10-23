@@ -17,6 +17,7 @@ export {
   hasDiscountFields,
   reconcileReceipt,
   receiptGapCentsOf,
+  lineTotalFromQty,
   billDiscountExceedsItems,
   normalizeScanDiscounts,
 } from '../api/_lib/totals.js';

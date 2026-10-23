@@ -505,6 +505,52 @@ function normalizeScanDiscounts(parsed) {
   };
 }
 
+/**
+ * A finite, non-negative number as an exact decimal: `{ digits, scale }` where
+ * the value is digits / 10^scale, with digits a BigInt. Uses the shortest
+ * decimal text of the number (what the host typed), so 1.005 is exactly
+ * 1005 / 1000 and never the nearest binary fraction.
+ */
+function exactDecimal(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
+  const match = /^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(value));
+  if (!match) return null;
+  const fraction = match[2] || '';
+  let digits = BigInt(match[1] + fraction);
+  let scale = fraction.length - (match[3] ? Number(match[3]) : 0);
+  if (scale < 0) {
+    digits *= 10n ** BigInt(-scale);
+    scale = 0;
+  }
+  return { digits, scale };
+}
+
+/**
+ * The line price, in whole sen, for a host's edit of quantity or unit price:
+ * quantity x unit price, computed once in exact decimal arithmetic and rounded
+ * half up to the nearest sen. Quantity and unit price themselves are never
+ * rounded. Floating-point noise cannot flip a true half (1.005 x RM 1.00 is
+ * exactly 100.5 sen and settles to 101).
+ *
+ * Returns `{ cents, rounded }` (`rounded` is true when the exact product was
+ * not already a whole sen), or null when there is nothing to calculate: a
+ * quantity that is not above zero, a unit price that is not a number of zero
+ * or more, or a product too large to hold exactly.
+ */
+function lineTotalFromQty(qty, unitPrice) {
+  const q = exactDecimal(qty);
+  const u = exactDecimal(unitPrice);
+  if (!q || !u || q.digits === 0n) return null;
+  const numerator = q.digits * u.digits * 100n;
+  const denominator = 10n ** BigInt(q.scale + u.scale);
+  const whole = numerator / denominator;
+  const remainder = numerator - whole * denominator;
+  const roundedUp = remainder * 2n >= denominator;
+  const cents = Number(roundedUp ? whole + 1n : whole);
+  if (!Number.isSafeInteger(cents)) return null;
+  return { cents, rounded: remainder !== 0n };
+}
+
 function manualItemRemainingCents(item, assignment) {
   if (!assignment || assignment.mode !== 'manual') return 0;
   const lineCents = itemNetCents(item);
@@ -529,6 +575,7 @@ module.exports = {
   hasDiscountFields,
   reconcileReceipt,
   receiptGapCentsOf,
+  lineTotalFromQty,
   billDiscountExceedsItems,
   normalizeScanDiscounts,
 };

@@ -1,4 +1,4 @@
-import { centsToPercent, fromCents } from '../../js/totals.js';
+import { centsToPercent, fromCents, lineTotalFromQty, toCents } from '../../js/totals.js';
 import { sameName } from '../../api/_lib/name-rule.js';
 
 export const initialState = {
@@ -14,6 +14,11 @@ export const initialState = {
   // name still used inside `assignments`) until the roster is unambiguous
   // again, so nobody's ticks are merged or lost.
   nameKeyByIndex: {},
+  // What the screen shows beside a line price the host's edit changed: per
+  // item id 'calc' (worked out from qty x price), 'rounded' (the product was
+  // not a whole sen and was settled to the nearest sen) or 'kept' (the host
+  // typed the price). Kept apart from `parsed` so none of it is ever sent.
+  derived: { lines: {}, subtotalMoved: false },
   ownerPaymentHandle: '',
   errorMessage: '',
   shareUrl: '',
@@ -163,7 +168,7 @@ export function reducer(state, action) {
         action.parsed.rounding !== undefined || action.parsed.discount !== undefined
           ? { scanned_rounding: Number.isFinite(action.parsed.rounding) ? action.parsed.rounding : 0 }
           : {};
-      return { ...state, parsed: { ...action.parsed, ...scanned, items } };
+      return { ...state, parsed: { ...action.parsed, ...scanned, items }, derived: { lines: {}, subtotalMoved: false } };
     }
     case 'ADD_PAYER': {
       const keys = assignmentKeys(state);
@@ -307,10 +312,39 @@ export function reducer(state, action) {
     }
     case 'UPDATE_ITEM_FIELD': {
       if (!state.parsed) return state;
-      const items = state.parsed.items.map((item) =>
-        item.id === action.itemId ? { ...item, [action.field]: action.value } : item
-      );
-      return { ...state, parsed: { ...state.parsed, items } };
+      const before = state.parsed.items.find((item) => item.id === action.itemId);
+      if (!before) return state;
+      const { field, value } = action;
+      let after = { ...before, [field]: value };
+      let kind = null; // how the line price was reached by this edit
+      if (field === 'qty' || field === 'unit_price') {
+        // Only the host's own edit of qty or unit price works out a line price.
+        // A quantity that is not above zero (or a price that is not a number)
+        // leaves the line price alone. Qty and unit price stay as typed.
+        const product = lineTotalFromQty(after.qty, after.unit_price);
+        if (product) {
+          after = { ...after, line_total: fromCents(product.cents) };
+          kind = product.rounded ? 'rounded' : 'calc';
+        }
+      } else if (field === 'line_total') {
+        kind = 'kept';
+      }
+      const items = state.parsed.items.map((item) => (item.id === action.itemId ? after : item));
+      let parsed = { ...state.parsed, items };
+      let derived = state.derived;
+      if (kind) {
+        const prior = state.derived || initialState.derived;
+        // The subtotal moves by exactly what the line price moved, in cents;
+        // service, tax, discounts, rounding and the grand total never move.
+        const delta = toCents(after.line_total) - toCents(before.line_total);
+        if (delta !== 0) parsed = { ...parsed, subtotal: fromCents(toCents(state.parsed.subtotal) + delta) };
+        derived = {
+          lines: { ...prior.lines, [action.itemId]: kind },
+          subtotalMoved: prior.subtotalMoved || delta !== 0,
+          last: action.itemId, // the row the host just edited, for the brief highlight
+        };
+      }
+      return { ...state, parsed, derived };
     }
     case 'ADD_ITEM': {
       if (!state.parsed) return state;
@@ -322,11 +356,23 @@ export function reducer(state, action) {
       const items = state.parsed.items.filter((item) => item.id !== action.itemId);
       const assignments = { ...state.assignments };
       delete assignments[action.itemId];
-      return { ...state, parsed: { ...state.parsed, items }, assignments };
+      const lines = { ...(state.derived || initialState.derived).lines };
+      delete lines[action.itemId];
+      return {
+        ...state,
+        parsed: { ...state.parsed, items },
+        assignments,
+        derived: { ...(state.derived || initialState.derived), lines },
+      };
     }
     case 'UPDATE_BILL_FIELD':
       if (!state.parsed) return state;
-      return { ...state, parsed: { ...state.parsed, [action.field]: action.value } };
+      return {
+        ...state,
+        parsed: { ...state.parsed, [action.field]: action.value },
+        // A subtotal the host types is theirs, not one that moved with an item edit.
+        derived: action.field === 'subtotal' ? { ...state.derived, subtotalMoved: false } : state.derived,
+      };
     case 'SET_PAYMENT_HANDLE':
       return { ...state, ownerPaymentHandle: action.value };
     case 'SET_SHARE_URL':
