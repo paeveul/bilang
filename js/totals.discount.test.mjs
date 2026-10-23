@@ -253,6 +253,8 @@ test('each share of each bill line is within 1 cent of exact proportion; persons
       rounding: (rand() < 0.5 ? randCents(9) - 4 : 0) / 100,
     };
     const netTotal = items.reduce((s, it) => s + Math.round(it.line_total * 100) - Math.round(it.discount * 100), 0);
+    // A whole-bill discount cannot exceed the items total.
+    bill.discount = Math.min(Math.round(bill.discount * 100), netTotal) / 100;
     const grandCents =
       netTotal - Math.round(bill.discount * 100) + Math.round(bill.service_charge * 100) + Math.round(bill.tax * 100) + Math.round(bill.rounding * 100);
     bill.grand_total = grandCents / 100;
@@ -304,4 +306,85 @@ test('old scan / old split with none of the new fields reads them as 0', () => {
   assert.equal(norm.discount, 0);
   assert.equal(norm.rounding, 0);
   assert.equal(norm.items[0].discount, 0);
+});
+
+// Every item fully discounted, nothing else on the bill but service and tax:
+// shares plus unclaimed must still come to the printed grand total.
+const freeBill = (over = {}) => ({ subtotal: 10, discount: 0, service_charge: 1, tax: 1.2, rounding: 0, grand_total: 2.2, ...over });
+const freeItems = () => [{ id: 'f', name: 'Free', line_total: 10, discount: 10 }];
+
+test('all items fully discounted, assigned: service and tax are kept, not lost', () => {
+  const r = computeTotals(freeItems(), { f: ['A'] }, freeBill(), ['A']);
+  assert.equal(sumAll(r), 220);
+  assert.equal(r.perPerson.A.totalCents, 0);
+  assert.equal(r.unclaimed.serviceCents, 100);
+  assert.equal(r.unclaimed.taxCents, 120);
+});
+
+test('all items fully discounted, unassigned: same total', () => {
+  const r = computeTotals(freeItems(), {}, freeBill(), ['A']);
+  assert.equal(sumAll(r), 220);
+});
+
+test('all items fully discounted, several items and several payers', () => {
+  const items = [
+    { id: 'f1', name: 'F1', line_total: 10, discount: 10 },
+    { id: 'f2', name: 'F2', line_total: 6.5, discount: 6.5 },
+  ];
+  const bill = freeBill({ subtotal: 16.5, service_charge: 1.65, tax: 0.99, grand_total: 2.64 });
+  const r = computeTotals(items, { f1: ['A', 'B'], f2: ['C'] }, bill, ['A', 'B', 'C']);
+  assert.equal(sumAll(r), 264);
+  assert.equal(reconcileReceipt(items, bill).matches, true);
+});
+
+test('all items fully discounted with only service, or only tax', () => {
+  assert.equal(sumAll(computeTotals(freeItems(), { f: ['A'] }, freeBill({ tax: 0, grand_total: 1 }), ['A'])), 100);
+  assert.equal(sumAll(computeTotals(freeItems(), { f: ['A'] }, freeBill({ service_charge: 0, grand_total: 1.2 }), ['A'])), 120);
+});
+
+test('all items fully discounted with no service and no tax: unchanged, no new keys', () => {
+  const r = computeTotals(freeItems(), { f: ['A'] }, freeBill({ service_charge: 0, tax: 0, grand_total: 0 }), ['A']);
+  assert.equal(sumAll(r), 0);
+  assert.equal('discountCents' in r.unclaimed, false);
+});
+
+test('a bill with a paid item next to a free one is still the original arithmetic', () => {
+  const items = [
+    { id: 'f', name: 'Free', line_total: 10, discount: 10 },
+    { id: 'p', name: 'P', line_total: 10, discount: 0 },
+  ];
+  const bill = freeBill({ subtotal: 20, grand_total: 12.2 });
+  const r = computeTotals(items, { f: ['A'], p: ['B'] }, bill, ['A', 'B']);
+  assert.equal(r.perPerson.B.totalCents, 1220);
+  assert.equal('discountCents' in r.unclaimed, false);
+});
+
+test('a whole-bill discount larger than the items total is refused by reconcileReceipt itself', () => {
+  const items = [
+    { id: 'a', name: 'A', line_total: 30 },
+    { id: 'b', name: 'B', line_total: 70 },
+  ];
+  const bill = { subtotal: 100, discount: 101, service_charge: 8, tax: 4, rounding: 0, grand_total: 11 };
+  const rec = reconcileReceipt(items, bill);
+  assert.equal(rec.matches, false);
+  assert.deepEqual(rec.errors.map((e) => e.code), ['bill_discount_exceeds_items']);
+});
+
+test('a whole-bill discount equal to the items total is still allowed', () => {
+  const items = [
+    { id: 'a', name: 'A', line_total: 30 },
+    { id: 'b', name: 'B', line_total: 70 },
+  ];
+  const bill = { subtotal: 100, discount: 100, service_charge: 8, tax: 4, rounding: 0, grand_total: 12 };
+  const rec = reconcileReceipt(items, bill);
+  assert.equal(rec.matches, true);
+  assert.deepEqual(rec.errors, []);
+});
+
+test('a bill discount above the items net (after item discounts) is refused; an item error is reported first', () => {
+  const items = [{ id: 'a', name: 'A', line_total: 50, discount: 20 }];
+  const over = reconcileReceipt(items, { subtotal: 50, discount: 31, service_charge: 0, tax: 0, rounding: 0, grand_total: -1 });
+  assert.deepEqual(over.errors.map((e) => e.code), ['bill_discount_exceeds_items']);
+  const both = reconcileReceipt([{ id: 'a', name: 'A', line_total: 10, discount: 12 }], { subtotal: 10, discount: 5, service_charge: 0, tax: 0, rounding: 0, grand_total: 0 });
+  assert.equal(both.errors[0].code, 'discount_exceeds_item');
 });

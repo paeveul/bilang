@@ -224,7 +224,14 @@ function computeTotals(items, assignments, billTotals, payers) {
   let unclaimedDiscountCents = 0;
   let unclaimedRoundingCents = 0;
 
-  if (billDiscountCents === 0 && billRoundingCents === 0) {
+  // When every item is fully discounted (nothing to weigh by) and the bill
+  // still prints service or tax, the original arithmetic has no one to give
+  // them to and would drop them. Those bills take the allocator below, which
+  // sends the whole amount to the unclaimed slot.
+  const nothingToWeigh =
+    itemizedSubtotalCents + unclaimedItemsCents === 0 && (billTaxCents !== 0 || billServiceCents !== 0);
+
+  if (billDiscountCents === 0 && billRoundingCents === 0 && !nothingToWeigh) {
     // No bill-level discount and no rounding: the original tax / service
     // arithmetic, unchanged, so a bill without them gives exactly the figures
     // it always did (an item discount already acts through the net item cents).
@@ -316,7 +323,7 @@ function computeTotals(items, assignments, billTotals, payers) {
       serviceCents: unclaimedServiceCents,
       // Present only when the bill has a discount or rounding, so a bill
       // without them reports the same unclaimed figures, same shape, as before.
-      ...(billDiscountCents !== 0 || billRoundingCents !== 0
+      ...(billDiscountCents !== 0 || billRoundingCents !== 0 || nothingToWeigh
         ? { discountCents: unclaimedDiscountCents, roundingCents: unclaimedRoundingCents }
         : {}),
       totalCents:
@@ -366,7 +373,7 @@ function hasDiscountFields(items, billTotals) {
  *   computedCents: number,
  *   grandTotalCents: number,
  *   differenceCents: number,
- *   errors: Array<{code:'discount_exceeds_item'|'negative_item_line', index:number, id:*}>,
+ *   errors: Array<{code:'discount_exceeds_item'|'negative_item_line'|'bill_discount_exceeds_items', index:number, id:*}>,
  *   hint: null | {code:'discount_mismatch', amountCents:number, multiple:1|2}
  * }}
  */
@@ -386,6 +393,8 @@ function reconcileReceipt(items, billTotals) {
   });
   const billDiscountCents = discountCentsOf(t.discount);
   if (billDiscountCents > 0) discountAmounts.push(billDiscountCents);
+  // A voucher cannot exceed what was ordered. Equal to the items total is fine.
+  if (billDiscountExceedsItems(list, t)) errors.push({ code: 'bill_discount_exceeds_items', index: -1, id: null });
 
   const computedCents =
     itemsNetCents - billDiscountCents + toCents(t.service_charge) + toCents(t.tax) + toCents(t.rounding);
