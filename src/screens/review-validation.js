@@ -34,6 +34,15 @@ export function validateItem(item, index) {
   if (!isFiniteNumber(item.line_total)) {
     problems.push({ field: 'line_total', message: `${label}: line total must be a number.` });
   }
+  // An item discount can equal its price (a free item) but never exceed it.
+  // Compared in whole cents so 0.1 + 0.2 style float noise cannot trip it.
+  if (
+    isFiniteNumber(item.discount) &&
+    isFiniteNumber(item.line_total) &&
+    Math.round(Math.abs(item.discount) * 100) > Math.round(item.line_total * 100)
+  ) {
+    problems.push({ field: 'discount', message: 'Discount is more than the item price.' });
+  }
   if (typeof item.category !== 'string' || !VALID_CATEGORIES.includes(item.category)) {
     problems.push({ field: 'category', message: `${label}: pick a category.` });
   }

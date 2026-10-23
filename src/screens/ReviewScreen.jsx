@@ -17,6 +17,8 @@ import {
   percentToCents,
   toCents,
 } from '../../js/totals.js';
+import { ALLOW_USE_DIFFERENCE_AS_ROUNDING, computeReceiptStatus } from './receipt-status.js';
+import { ItemDiscountLine, itemNetRM } from './discount-lines.js';
 import { useBillActions, useBillState } from '../state/BillContext.jsx';
 import { validateItems } from './review-validation.js';
 import ReviewPeopleRow from './ReviewPeopleRow.jsx';
@@ -65,6 +67,71 @@ function isItemResolved(item, assignment) {
   return true; // equal-split with >=1 ticked person is always exactly resolved
 }
 
+// A money box that keeps what the host is typing (so "0." survives), accepts
+// positive amounts only (a typed or pasted minus is dropped), and follows the
+// stored value when something else changes it (Undo, "use as rounding").
+function MoneyField({ value, onValue, inputRef, ...rest }) {
+  const [text, setText] = useState(() => (value ? String(value) : ''));
+  useEffect(() => {
+    if (toCents(text) !== toCents(value)) setText(value ? String(value) : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the stored value only
+  }, [value]);
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      placeholder="0.00"
+      value={text}
+      ref={inputRef}
+      onChange={(e) => {
+        const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+        setText(cleaned);
+        onValue(fromCents(toCents(Math.abs(Number(cleaned)) || 0)));
+      }}
+      {...rest}
+    />
+  );
+}
+
+function signedRM(cents) {
+  return `${cents < 0 ? 'takes' : 'adds'} ${formatRMLocked(fromCents(Math.abs(cents)))}`;
+}
+
+function statusHeadline(status) {
+  switch (status.kind) {
+    case 'ok':
+      return 'Adds up to the receipt';
+    case 'item_discount_too_big':
+      return `Fix the discount on ${status.itemName} first.`;
+    case 'item_price_invalid':
+      return `Fix the price on ${status.itemName} first.`;
+    case 'bill_discount_too_big':
+      return 'Discount is more than the items total';
+    case 'off':
+      return `Does not add up: ${formatRMLocked(fromCents(Math.abs(status.differenceCents)))} ${status.direction}`;
+    default:
+      return '';
+  }
+}
+
+function hintText(hint) {
+  const amount = formatRMLocked(fromCents(hint.amountCents));
+  const where =
+    hint.target === 'item'
+      ? 'Check the price and discount on that item.'
+      : hint.target === 'bill'
+        ? 'Check Discount (whole bill).'
+        : 'Check the items that have a discount.';
+  const how = hint.direction === 'short' ? 'It may have been taken off twice.' : 'It may have been left out.';
+  return `A ${amount} discount may be counted twice (or missed). ${where} ${how}`;
+}
+
+const TAG_CLASS = 'inline-block rounded border border-slate-900 bg-white px-1.5 text-sm font-semibold text-slate-900';
+const ADD_BUTTON_CLASS =
+  'w-full rounded-lg border border-dashed border-slate-300 text-slate-600 text-sm py-3 min-h-[48px]';
+const TEXT_BUTTON_CLASS = 'text-sm text-slate-700 underline min-h-[48px] px-2';
+
 export default function ReviewScreen() {
   const { parsed, payers, assignments, claimMode } = useBillState();
   const {
@@ -90,6 +157,44 @@ export default function ReviewScreen() {
   const [rosterFocusTick, setRosterFocusTick] = useState(0);
 
   const manualInputRefs = useRef({});
+
+  // Discount and rounding. A row the host opened stays until they remove it,
+  // even at 0.00, so it does not vanish under their thumb.
+  const [itemDiscountOpen, setItemDiscountOpen] = useState(() => new Set());
+  const [billDiscountOpen, setBillDiscountOpen] = useState(false);
+  const [roundingOpen, setRoundingOpen] = useState(false);
+  const [roundingSign, setRoundingSign] = useState(() => ((parsed?.rounding ?? 0) < 0 ? 'takes' : 'adds'));
+  const [billFocus, setBillFocus] = useState(null); // 'discount' | 'rounding' | 'addDiscount' | 'addRounding'
+  const [liveNote, setLiveNote] = useState('');
+  const billRefs = useRef({});
+
+  const receiptStatus = parsed ? computeReceiptStatus(parsed.items ?? [], parsed) : null;
+  const statusText = receiptStatus ? statusHeadline(receiptStatus) : '';
+  // The screen-reader copy of the status waits until typing pauses, so it is
+  // read once, not on every digit. The colour and numbers update at once.
+  const [liveText, setLiveText] = useState(statusText);
+  const liveTextRef = useRef(liveText);
+  liveTextRef.current = liveText;
+  useEffect(() => {
+    // The first message (and a note such as "Discount row removed.") goes out at once.
+    const wait = liveNote || !liveTextRef.current ? 0 : 800;
+    const t = setTimeout(() => setLiveText(liveNote ? `${liveNote} ${statusText}` : statusText), wait);
+    return () => clearTimeout(t);
+  }, [statusText, liveNote]);
+
+  useEffect(() => {
+    if (!parsed) return;
+    if (parsed.rounding < 0) setRoundingSign('takes');
+    else if (parsed.rounding > 0) setRoundingSign('adds');
+  }, [parsed?.rounding]); // eslint-disable-line react-hooks/exhaustive-deps -- follows the stored sign only
+
+  useEffect(() => {
+    if (!billFocus) return undefined;
+    billRefs.current[billFocus]?.focus();
+    const t = setTimeout(() => billRefs.current[billFocus]?.focus(), 0);
+    setBillFocus(null);
+    return () => clearTimeout(t);
+  }, [billFocus]);
 
   // Item-field validation (mirrors the server's item rules — see
   // review-validation.js). `showItemErrors` flips on at the first failed
@@ -174,13 +279,32 @@ export default function ReviewScreen() {
   const hasClash = clashRows.size > 0;
   const onlyClash =
     hasClash && !rosterCheck.hostNameBlank && rosterCheck.blankIndices.length === 0 && rosterCheck.tooLongIndices.length === 0;
-  const readyExceptRoster = items.length > 0 && unresolvedCount === 0;
+  // The exact receipt check (js/totals.js, cents, no tolerance) also decides whether
+  // Confirm may go ahead. An older shape without the new fields is not checked.
+  const reconcileBlocked = receiptStatus.blocked;
+  const readyExceptRoster = items.length > 0 && unresolvedCount === 0 && !reconcileBlocked;
   const canConfirm = readyExceptRoster && rosterValid;
 
-  const itemSumCents = items.reduce((sum, item) => sum + toCents(item.line_total), 0);
-  const statedSubtotalCents = toCents(parsed.subtotal);
-  const mismatchCents = itemSumCents - statedSubtotalCents;
-  const showMismatch = items.length > 0 && Math.abs(mismatchCents) >= 2;
+  const roundingCents = toCents(parsed.rounding);
+  const showDiscountRow = billDiscountOpen || toCents(parsed.discount) !== 0;
+  const showRoundingRow = roundingOpen || roundingCents !== 0;
+  const scannedRounding = parsed.scanned_rounding;
+  const roundingEdited = scannedRounding !== undefined && roundingCents !== toCents(scannedRounding);
+
+  function editBill(field, value) {
+    setLiveNote('');
+    updateBillField(field, value);
+  }
+  function setRounding(sign, amountRM) {
+    editBill('rounding', sign === 'takes' ? 0 - amountRM : amountRM);
+  }
+  function useDifferenceAsRounding() {
+    const next = receiptStatus.rounding.resultingCents;
+    setRoundingOpen(true);
+    updateBillField('rounding', fromCents(next));
+    setLiveNote(`Rounding set to ${signedRM(next)}. Adds up to the receipt.`);
+    setBillFocus('rounding');
+  }
 
   // Radix Accordion.Root, controlled: `value` is the array of currently-open
   // item ids, `onValueChange` fires with the NEXT array Radix wants to
@@ -229,7 +353,8 @@ export default function ReviewScreen() {
   function handleManualValueChange(item, name, text) {
     const assignment = assignments[item.id];
     const unit = assignment && !Array.isArray(assignment) ? assignment.manual.unit : 'RM';
-    const cents = unit === '%' ? percentToCents(text, item.line_total) : toCents(text);
+    // A percentage is of what the item costs after its own discount.
+    const cents = unit === '%' ? percentToCents(text, itemNetRM(item)) : toCents(text);
     setItemManualValue(item.id, name, text, cents);
     clearBlocked(item.id);
   }
@@ -240,6 +365,7 @@ export default function ReviewScreen() {
 
   function handleConfirm() {
     setMoneySnapTick((n) => n + 1);
+    if (reconcileBlocked) return;
     if (!rosterValid) {
       setPeopleOpen(true);
       setShowRosterErrors(true);
@@ -294,16 +420,6 @@ export default function ReviewScreen() {
         focusTick={rosterFocusTick}
       />
 
-      {showMismatch && (
-        <div
-          role="status"
-          className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3"
-        >
-          These items add up to {formatRM(fromCents(itemSumCents))} but the receipt says{' '}
-          {formatRM(parsed.subtotal)} — {formatRM(fromCents(Math.abs(mismatchCents)))} unaccounted.
-        </div>
-      )}
-
       {items.length === 0 && (
         <div className="rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-sm p-3">
           No items were read from this receipt. Try re-scanning, or add items by hand below.
@@ -327,6 +443,11 @@ export default function ReviewScreen() {
           const fieldProblems = showItemErrors ? problemsById.get(item.id) || [] : [];
           const bad = (field) => fieldProblems.some((p) => p.field === field);
           const errId = (field) => `${item.id}-${field}-error`;
+          const itemDiscount = Math.abs(Number(item.discount) || 0);
+          const discountVisible = itemDiscountOpen.has(item.id) || itemDiscount > 0;
+          const discountTooBig = toCents(itemDiscount) > toCents(item.line_total);
+          const discountErrId = `${item.id}-discount-error`;
+          const itemOnlyProblems = fieldProblems.filter((p) => p.field !== 'discount');
           const a11y = (field) =>
             bad(field) ? { 'aria-invalid': true, 'aria-describedby': errId(field) } : {};
 
@@ -344,6 +465,7 @@ export default function ReviewScreen() {
                     >
                       <span className="flex-1">
                         <span className="block text-sm font-medium">{item.name || '(unnamed item)'}</span>
+                        <ItemDiscountLine item={item} />
                         {showItemErrors && problemsById.has(item.id) ? (
                           <span className="block text-xs text-red-700">Needs fixing</span>
                         ) : (
@@ -352,7 +474,7 @@ export default function ReviewScreen() {
                           </span>
                         )}
                       </span>
-                      <span className="text-sm font-semibold tabular-nums">{formatRM(item.line_total)}</span>
+                      <span className="shrink-0 text-sm font-semibold tabular-nums">{formatRM(itemNetRM(item))}</span>
                     </motion.button>
                   </Accordion.Trigger>
                 </Accordion.Header>
@@ -427,9 +549,68 @@ export default function ReviewScreen() {
                         />
                       </label>
                     </div>
-                    {fieldProblems.length > 0 && (
+                    {itemDiscount > 0 && (
+                      <p className="text-xs text-slate-600">Line total is the price before discount.</p>
+                    )}
+                    {discountVisible ? (
+                      <div className="space-y-1">
+                        <label className="block space-y-1">
+                          <span className="text-xs text-slate-600">Discount on this item (RM)</span>
+                          <MoneyField
+                            value={itemDiscount}
+                            onValue={(n) => {
+                              setItemDiscountOpen((prev) => (prev.has(item.id) ? prev : new Set(prev).add(item.id)));
+                              updateItemField(item.id, 'discount', n);
+                            }}
+                            inputRef={(el) => registerFieldRef(item.id, 'discount', el)}
+                            aria-label={`Discount on ${item.name || 'this item'}`}
+                            className="w-full min-h-[48px]"
+                            {...(discountTooBig ? { 'aria-invalid': true, 'aria-describedby': discountErrId } : {})}
+                          />
+                        </label>
+                        <p className="text-xs text-slate-600">You pay {formatRMLocked(itemNetRM(item))} for this item.</p>
+                        <button
+                          type="button"
+                          className={TEXT_BUTTON_CLASS}
+                          onClick={() => {
+                            updateItemField(item.id, 'discount', 0);
+                            setItemDiscountOpen((prev) => {
+                              const next = new Set(prev);
+                              next.delete(item.id);
+                              return next;
+                            });
+                            setPendingFocus({ itemId: item.id, field: 'addDiscount' });
+                          }}
+                        >
+                          Remove discount
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`${TEXT_BUTTON_CLASS} block text-left`}
+                        ref={(el) => registerFieldRef(item.id, 'addDiscount', el)}
+                        onClick={() => {
+                          setItemDiscountOpen((prev) => new Set(prev).add(item.id));
+                          setPendingFocus({ itemId: item.id, field: 'discount' });
+                        }}
+                      >
+                        + Add discount to this item
+                      </button>
+                    )}
+                    {discountTooBig && (
+                      <div
+                        id={discountErrId}
+                        data-testid="item-discount-error"
+                        className="rounded-md bg-red-50 border border-red-200 text-red-700 text-xs p-2 space-y-1"
+                      >
+                        <p>Discount is more than the item price.</p>
+                        <p>Lower it, or put the extra under Discount for the whole bill.</p>
+                      </div>
+                    )}
+                    {itemOnlyProblems.length > 0 && (
                       <div className="rounded-md bg-red-50 border border-red-200 text-red-700 text-xs p-2 space-y-1">
-                        {fieldProblems.map((p) => (
+                        {itemOnlyProblems.map((p) => (
                           <p key={p.field} id={errId(p.field)}>
                             {p.message}
                           </p>
@@ -502,7 +683,7 @@ export default function ReviewScreen() {
                             </div>
                             <div>
                               Shares must total{' '}
-                              <AnimatedMoney cents={toCents(item.line_total)} snapTick={moneySnapTick} locked />.
+                              <AnimatedMoney cents={Math.round(itemNetRM(item) * 100)} snapTick={moneySnapTick} locked />.
                             </div>
                           </>
                         ) : remaining === 0 ? (
@@ -605,16 +786,54 @@ export default function ReviewScreen() {
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
         <h3 className="font-semibold text-sm text-slate-700">Bill totals</h3>
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <label className="space-y-1">
-            <span className="text-xs text-slate-500">Subtotal</span>
-            <input
-              type="number"
-              step="0.01"
-              value={parsed.subtotal}
-              onChange={(e) => updateBillField('subtotal', Number(e.target.value) || 0)}
-              className="w-full min-h-[48px]"
-            />
-          </label>
+          <div className={`space-y-1${showDiscountRow ? ' col-span-2' : ''}`}>
+            <label className="space-y-1 block">
+              <span className="text-xs text-slate-500">Subtotal</span>
+              <input
+                type="number"
+                step="0.01"
+                value={parsed.subtotal}
+                onChange={(e) => updateBillField('subtotal', Number(e.target.value) || 0)}
+                aria-describedby="subtotal-note"
+                className="w-full min-h-[48px]"
+              />
+            </label>
+            <p id="subtotal-note" className="text-xs text-slate-600">
+              For your reference
+            </p>
+          </div>
+          {showDiscountRow && (
+            <div className="col-span-2 space-y-1" data-testid="bill-discount-row">
+              <label className="block space-y-1">
+                <span className="text-xs text-slate-600">Discount (whole bill)</span>
+                <MoneyField
+                  value={Math.abs(parsed.discount || 0)}
+                  onValue={(n) => {
+                    setBillDiscountOpen(true);
+                    editBill('discount', n);
+                  }}
+                  inputRef={(el) => {
+                    billRefs.current.discount = el;
+                  }}
+                  aria-label="Discount (whole bill)"
+                  className="w-full min-h-[48px]"
+                />
+              </label>
+              <p className="text-xs text-slate-600">Taken off the bill</p>
+              <button
+                type="button"
+                className={TEXT_BUTTON_CLASS}
+                onClick={() => {
+                  editBill('discount', 0);
+                  setBillDiscountOpen(false);
+                  setLiveNote('Discount row removed.');
+                  setBillFocus('addDiscount');
+                }}
+              >
+                Remove discount
+              </button>
+            </div>
+          )}
           <label className="space-y-1">
             <span className="text-xs text-slate-500">Service charge</span>
             <input
@@ -635,17 +854,203 @@ export default function ReviewScreen() {
               className="w-full min-h-[48px]"
             />
           </label>
-          <label className="space-y-1">
-            <span className="text-xs text-slate-500">Grand total</span>
-            <input
-              type="number"
-              step="0.01"
-              value={parsed.grand_total}
-              onChange={(e) => updateBillField('grand_total', Number(e.target.value) || 0)}
-              className="w-full min-h-[48px]"
-            />
-          </label>
+          {showRoundingRow && (
+            <div className="col-span-2 space-y-2" data-testid="rounding-row">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-slate-600" id="rounding-label">
+                  Rounding
+                </span>
+                {roundingEdited && (
+                  <span className={TAG_CLASS} data-testid="rounding-edited-tag">
+                    Edited by you
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 items-center">
+                <ToggleGroup.Root
+                  type="single"
+                  value={roundingSign}
+                  aria-label="Rounding adds or takes off"
+                  onValueChange={(next) => {
+                    if (!next) return;
+                    setRoundingSign(next);
+                    if (roundingCents !== 0) setRounding(next, Math.abs(parsed.rounding));
+                  }}
+                  className="flex grow rounded-md border border-slate-300 overflow-hidden text-sm font-medium"
+                >
+                  <ToggleGroup.Item
+                    value="adds"
+                    className={`flex-1 min-h-[48px] px-3 ${roundingSign === 'adds' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}
+                  >
+                    Adds
+                  </ToggleGroup.Item>
+                  <ToggleGroup.Item
+                    value="takes"
+                    className={`flex-1 min-h-[48px] px-3 ${roundingSign === 'takes' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}
+                  >
+                    Takes off
+                  </ToggleGroup.Item>
+                </ToggleGroup.Root>
+                <MoneyField
+                  value={Math.abs(parsed.rounding || 0)}
+                  onValue={(n) => {
+                    setRoundingOpen(true);
+                    setRounding(roundingSign, n);
+                  }}
+                  inputRef={(el) => {
+                    billRefs.current.rounding = el;
+                  }}
+                  aria-label="Rounding amount"
+                  className="w-28 min-h-[48px]"
+                />
+              </div>
+              <p className="text-xs text-slate-600" data-testid="rounding-summary">
+                {roundingCents === 0
+                  ? 'No rounding'
+                  : roundingCents > 0
+                    ? `Adds ${formatRMLocked(fromCents(roundingCents))} to the bill`
+                    : `Takes ${formatRMLocked(fromCents(-roundingCents))} off the bill`}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {roundingEdited && (
+                  <button
+                    type="button"
+                    className={TEXT_BUTTON_CLASS}
+                    onClick={() => {
+                      editBill('rounding', scannedRounding);
+                      setLiveNote('Rounding put back to what the receipt read.');
+                    }}
+                  >
+                    Undo
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={TEXT_BUTTON_CLASS}
+                  onClick={() => {
+                    editBill('rounding', 0);
+                    setRoundingOpen(false);
+                    setLiveNote('Rounding row removed.');
+                    setBillFocus('addRounding');
+                  }}
+                >
+                  Remove rounding
+                </button>
+              </div>
+            </div>
+          )}
+          <div className={`space-y-1${showRoundingRow ? ' col-span-2' : ''}`}>
+            <label className="space-y-1 block">
+              <span className="text-xs text-slate-500">Grand total</span>
+              <input
+                type="number"
+                step="0.01"
+                value={parsed.grand_total}
+                onChange={(e) => updateBillField('grand_total', Number(e.target.value) || 0)}
+                className="w-full min-h-[48px]"
+              />
+            </label>
+          </div>
         </div>
+
+        {(!showDiscountRow || !showRoundingRow) && (
+          <div className="space-y-2">
+            {!showDiscountRow && (
+              <button
+                type="button"
+                className={ADD_BUTTON_CLASS}
+                ref={(el) => {
+                  billRefs.current.addDiscount = el;
+                }}
+                onClick={() => {
+                  setBillDiscountOpen(true);
+                  setBillFocus('discount');
+                }}
+              >
+                + Add discount
+              </button>
+            )}
+            {!showRoundingRow && (
+              <button
+                type="button"
+                className={ADD_BUTTON_CLASS}
+                ref={(el) => {
+                  billRefs.current.addRounding = el;
+                }}
+                onClick={() => {
+                  setRoundingOpen(true);
+                  setBillFocus('rounding');
+                }}
+              >
+                + Add rounding
+              </button>
+            )}
+          </div>
+        )}
+
+        {receiptStatus.kind !== 'none' && (
+          <>
+            <div
+              data-testid="reconcile-status"
+              data-state={receiptStatus.kind === 'ok' ? 'ok' : 'error'}
+              className={
+                receiptStatus.kind === 'ok'
+                  ? 'rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm p-3 space-y-1'
+                  : 'rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm p-3 space-y-2'
+              }
+            >
+              {receiptStatus.kind === 'ok' && (
+                <>
+                  <p className="font-semibold">
+                    <span aria-hidden="true">✓ </span>
+                    Adds up to the receipt
+                  </p>
+                  <p>Items, charges and rounding come to {formatRMLocked(fromCents(receiptStatus.grandTotalCents))}.</p>
+                </>
+              )}
+              {receiptStatus.kind === 'item_discount_too_big' && (
+                <p className="font-semibold">Fix the discount on {receiptStatus.itemName} first.</p>
+              )}
+              {receiptStatus.kind === 'item_price_invalid' && (
+                <p className="font-semibold">Fix the price on {receiptStatus.itemName} first.</p>
+              )}
+              {receiptStatus.kind === 'bill_discount_too_big' && (
+                <p className="font-semibold">Discount is more than the items total</p>
+              )}
+              {receiptStatus.kind === 'off' && (
+                <>
+                  <p className="font-semibold">{statusHeadline(receiptStatus)}</p>
+                  <p>
+                    Your numbers come to {formatRMLocked(fromCents(receiptStatus.computedCents))}. The receipt total is{' '}
+                    {formatRMLocked(fromCents(receiptStatus.grandTotalCents))}.
+                  </p>
+                  {receiptStatus.hint && <p data-testid="reconcile-hint">{hintText(receiptStatus.hint)}</p>}
+                  <p>Check each amount against your receipt.</p>
+                  {ALLOW_USE_DIFFERENCE_AS_ROUNDING &&
+                    (receiptStatus.rounding.allowed ? (
+                      <div className="space-y-2">
+                        <p>If the receipt really shows this, you can book it as rounding.</p>
+                        <button
+                          type="button"
+                          onClick={useDifferenceAsRounding}
+                          className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 text-sm font-medium min-h-[48px] px-3"
+                        >
+                          Use this difference as rounding
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-slate-700" data-testid="rounding-too-big">
+                        This is too big to be rounding. Check your items and amounts.
+                      </p>
+                    ))}
+                </>
+              )}
+            </div>
+            <div role="status" aria-live="polite" className="sr-only" data-testid="reconcile-live">
+              {liveText}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
@@ -707,6 +1112,11 @@ export default function ReviewScreen() {
       >
         Confirm and continue
       </motion.button>
+      {reconcileBlocked && (
+        <p className="text-sm text-slate-600 text-center" data-testid="reconcile-block-reason">
+          Confirm is off until the difference is RM 0.00. See Bill totals above.
+        </p>
+      )}
       {!rosterValid && (
         <p className="text-sm text-slate-600 text-center" data-testid="roster-block-reason">
           {onlyClash ? 'Two people have the same name.' : 'Finish the people list first.'}

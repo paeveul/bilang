@@ -136,3 +136,14 @@ test('pure rules: mirrors the server (qty, name, price, total finite, category, 
   assert.deepEqual(bad({ line_total: NaN }), ['line_total']);
   assert.deepEqual(bad({ category: 'dessert' }), ['category']);
 });
+
+test('the item discount rule: equal to the price passes, above it is a discount problem, a missing discount is fine', () => {
+  const base = { id: 'i1', name: 'Satay', category: 'food', qty: 1, unit_price: 40, line_total: 40 };
+  assert.deepEqual(validateItems([base]), []);
+  assert.deepEqual(validateItems([{ ...base, discount: 40 }]), []);
+  const over = validateItems([{ ...base, discount: 40.01 }]);
+  assert.equal(over[0].problems[0].field, 'discount');
+  assert.equal(over[0].problems[0].message, 'Discount is more than the item price.');
+  // Whole-cent comparison: float noise is not a problem.
+  assert.deepEqual(validateItems([{ ...base, line_total: 0.3, discount: 0.1 + 0.2 }]), []);
+});
