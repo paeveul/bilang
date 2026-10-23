@@ -75,6 +75,20 @@ function itemNetCents(item) {
 }
 
 /**
+ * The acknowledged difference on the receipt, in signed cents, or 0.
+ *
+ * The difference is grand total minus what the printed lines add up to. It is
+ * shared like service and tax only when the bill carries the host's tick
+ * (`receipt_gap_acknowledged: true`) and a whole-cent `receipt_gap_cents`. A
+ * split saved before this existed has neither field and reads as 0.
+ */
+function receiptGapCentsOf(billTotals) {
+  const t = billTotals || {};
+  if (t.receipt_gap_acknowledged !== true) return 0;
+  return Number.isInteger(t.receipt_gap_cents) ? t.receipt_gap_cents : 0;
+}
+
+/**
  * Splits a signed amount (cents) across weights with the largest-remainder
  * method: every part is within 1 cent of the exact proportion, the parts add
  * to the amount exactly, and a weight of 0 never receives a cent. When every
@@ -120,6 +134,8 @@ function allocateByWeight(amount, weights) {
  * @property {number} grand_total
  * @property {number} [discount] - bill-level discount, positive (default 0)
  * @property {number} [rounding] - signed rounding line as printed (default 0)
+ * @property {number} [receipt_gap_cents] - signed difference on the receipt, used only with receipt_gap_acknowledged
+ * @property {boolean} [receipt_gap_acknowledged] - the host ticked that the screen matches the paper
  *
  * @param {Item[]} items
  * @param {Object<string, string[]|{mode:'equal',equal:string[]}|{mode:'manual',amounts:Object<string,number>}>} assignments
@@ -218,11 +234,13 @@ function computeTotals(items, assignments, billTotals, payers) {
   const billServiceCents = toCents(billTotals.service_charge);
   const billDiscountCents = discountCentsOf(billTotals.discount);
   const billRoundingCents = toCents(billTotals.rounding);
+  const billGapCents = receiptGapCentsOf(billTotals);
 
   let unclaimedTaxCents = 0;
   let unclaimedServiceCents = 0;
   let unclaimedDiscountCents = 0;
   let unclaimedRoundingCents = 0;
+  let unclaimedGapCents = 0;
 
   // When every item is fully discounted (nothing to weigh by) and the bill
   // still prints service or tax, the original arithmetic has no one to give
@@ -231,12 +249,12 @@ function computeTotals(items, assignments, billTotals, payers) {
   const nothingToWeigh =
     itemizedSubtotalCents + unclaimedItemsCents === 0 && (billTaxCents !== 0 || billServiceCents !== 0);
 
-  // Any discount (on an item or the whole bill) or rounding sends the bill
-  // through the largest-remainder allocator, so every person's share of every
-  // bill line is within 1 cent of exact. Only a bill with none of them keeps
-  // the original arithmetic.
+  // Any discount (on an item or the whole bill), rounding or acknowledged
+  // receipt difference sends the bill through the largest-remainder
+  // allocator, so every person's share of every bill line is within 1 cent of
+  // exact. Only a bill with none of them keeps the original arithmetic.
   const hasItemDiscount = items.some((item) => discountCentsOf(item.discount) > 0);
-  const useAllocator = billDiscountCents !== 0 || billRoundingCents !== 0 || hasItemDiscount || nothingToWeigh;
+  const useAllocator = billDiscountCents !== 0 || billRoundingCents !== 0 || billGapCents !== 0 || hasItemDiscount || nothingToWeigh;
 
   if (!useAllocator) {
     // No discount of any kind and no rounding: the original tax / service
@@ -295,25 +313,28 @@ function computeTotals(items, assignments, billTotals, payers) {
     const serviceShares = allocateByWeight(billServiceCents, weights);
     const taxShares = allocateByWeight(billTaxCents, weights);
     const roundingShares = allocateByWeight(billRoundingCents, weights);
+    const gapShares = allocateByWeight(billGapCents, weights);
     payers.forEach((name, i) => {
       const p = accounts.get(name);
       p.discountCents = discountShares[i];
       p.serviceCents = serviceShares[i];
       p.taxCents = taxShares[i];
       p.roundingCents = roundingShares[i];
+      if (billGapCents !== 0) p.gapCents = gapShares[i];
     });
     const last = weights.length - 1;
     unclaimedDiscountCents = discountShares[last];
     unclaimedServiceCents = serviceShares[last];
     unclaimedTaxCents = taxShares[last];
     unclaimedRoundingCents = roundingShares[last];
+    unclaimedGapCents = gapShares[last];
   }
 
   const perPerson = {};
   for (const name of payers) {
     const p = accounts.get(name);
     p.totalCents =
-      p.itemsCents + p.taxCents + p.serviceCents + (p.roundingCents || 0) - (p.discountCents || 0);
+      p.itemsCents + p.taxCents + p.serviceCents + (p.roundingCents || 0) + (p.gapCents || 0) - (p.discountCents || 0);
     // defineProperty, not assignment, so even a "__proto__" name is stored as
     // an own key rather than changing the object's prototype.
     Object.defineProperty(perPerson, name, { value: p, enumerable: true, writable: true, configurable: true });
@@ -333,11 +354,14 @@ function computeTotals(items, assignments, billTotals, payers) {
       ...(useAllocator
         ? { discountCents: unclaimedDiscountCents, roundingCents: unclaimedRoundingCents }
         : {}),
+      // Present only when the bill carries an acknowledged difference.
+      ...(billGapCents !== 0 ? { gapCents: unclaimedGapCents } : {}),
       totalCents:
         unclaimedItemsCents +
         unclaimedTaxCents +
         unclaimedServiceCents +
-        unclaimedRoundingCents -
+        unclaimedRoundingCents +
+        unclaimedGapCents -
         unclaimedDiscountCents,
     },
     reconciliation: {
@@ -371,8 +395,10 @@ function hasDiscountFields(items, billTotals) {
  *
  * `subtotal` is not part of it. Negative discounts are read as positive.
  * `differenceCents` is grand_total minus what the lines add up to: positive
- * means the receipt prints more than the lines explain. Adding it to the
- * rounding makes the check exact (the app never applies that for the host).
+ * means the receipt prints more than the lines explain. It is only reported.
+ * The app never adds it to the rounding, a discount or any printed figure; a
+ * non-zero difference passes only with the host's acknowledgement, and is then
+ * shared as its own "Difference on receipt" line.
  *
  * @returns {{
  *   applicable: boolean,      // false for a split saved before these fields existed
@@ -502,6 +528,7 @@ module.exports = {
   itemNetCents,
   hasDiscountFields,
   reconcileReceipt,
+  receiptGapCentsOf,
   billDiscountExceedsItems,
   normalizeScanDiscounts,
 };

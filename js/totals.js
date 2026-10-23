@@ -16,6 +16,7 @@ export {
   itemNetCents,
   hasDiscountFields,
   reconcileReceipt,
+  receiptGapCentsOf,
   billDiscountExceedsItems,
   normalizeScanDiscounts,
 } from '../api/_lib/totals.js';

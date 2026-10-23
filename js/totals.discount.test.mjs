@@ -346,18 +346,52 @@ test('a bill with a paid item next to a free one: the free item has no weight, t
   assert.equal(sumAll(r), 1220);
 });
 
-test('item discount only, shared by three: service and tax shares are each within 1 cent of exact', () => {
-  const items = [{ id: 'x', name: 'X', line_total: 82.63, discount: 76.25 }];
-  const bill = { subtotal: 82.63, discount: 0, service_charge: 16.37, tax: 5.74, rounding: 0, grand_total: 28.49 };
+// The arithmetic bills without any discount, rounding or difference still use:
+// tax and service are rounded per person and the last person takes the
+// remainder. Kept here so the fixture below can prove it differs from the
+// allocator by at least 2 sen, and cannot silently go soft.
+function legacyShares(weights, amountCents) {
+  const total = weights.reduce((a, b) => a + b, 0);
+  let remaining = amountCents;
+  return weights.map((w, i) => {
+    const share = i === weights.length - 1 ? remaining : Math.round((amountCents * w) / total);
+    remaining -= share;
+    return share;
+  });
+}
+
+test('item discount only, seven payers: tax and service are shared by the allocator, 2+ sen away from the old per-person rounding', () => {
+  const payers = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'];
+  const netCents = [100, 100, 100, 101, 103, 107, 109];
+  // Only the first item carries a discount (RM 0.50 off RM 1.50), so this bill
+  // has no bill discount and no rounding: the item discount alone must choose
+  // the allocator.
+  const items = netCents.map((c, i) => ({
+    id: `i${i}`,
+    name: `Item ${i}`,
+    line_total: (i === 0 ? c + 50 : c) / 100,
+    discount: i === 0 ? 0.5 : 0,
+  }));
+  const bill = { subtotal: 7.7, discount: 0, service_charge: 1.26, tax: 1, rounding: 0, grand_total: 9.46 };
   assert.equal(reconcileReceipt(items, bill).matches, true);
-  const r = computeTotals(items, { x: ['B', 'C', 'E'] }, bill, ['B', 'C', 'E']);
-  // Each person's net item share is 2.13 / 2.13 / 2.12 (6.38 shared three ways).
-  for (const n of ['B', 'C', 'E']) {
+  const assignments = Object.fromEntries(items.map((it, i) => [it.id, [payers[i]]]));
+  const r = computeTotals(items, assignments, bill, payers);
+
+  const oldTax = legacyShares(netCents, 100);
+  const oldService = legacyShares(netCents, 126);
+  const worstGap = Math.max(
+    ...payers.map((n, i) =>
+      Math.max(Math.abs(oldTax[i] - r.perPerson[n].taxCents), Math.abs(oldService[i] - r.perPerson[n].serviceCents))
+    )
+  );
+  assert.ok(worstGap >= 2, `fixture must separate the two paths by 2 sen or more, got ${worstGap}`);
+
+  payers.forEach((n, i) => {
     const p = r.perPerson[n];
-    assert.ok(Math.abs(p.serviceCents - (1637 * p.itemsCents) / 638) < 1);
-    assert.ok(Math.abs(p.taxCents - (574 * p.itemsCents) / 638) < 1);
-  }
-  assert.equal(sumAll(r), 2849);
+    assert.ok(Math.abs(p.serviceCents - (126 * netCents[i]) / 720) < 1, `service share of ${n}`);
+    assert.ok(Math.abs(p.taxCents - (100 * netCents[i]) / 720) < 1, `tax share of ${n}`);
+  });
+  assert.equal(sumAll(r), 946);
 });
 
 test('item discount only, no bill discount or rounding: sum is exact and unclaimed carries its share', () => {
