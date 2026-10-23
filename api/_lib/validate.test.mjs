@@ -420,3 +420,42 @@ test('claim: two names that match by the shared rule count as a duplicate inside
   const body = { action: 'claim', itemId: 'i1', payer: 'Bea', sharedWith: ['bea  '] };
   assert.equal(validateClaimRequest(body), 'Duplicate names in claim');
 });
+
+// --- discount and rounding are checked on the server ---
+
+test('validateParsedReceipt: an older scan without the new fields still passes (reads as 0)', () => {
+  const parsed = validParsedReceipt();
+  assert.equal(parsed.discount, undefined);
+  assert.equal(validateParsedReceipt(parsed), null);
+});
+
+test('validateParsedReceipt: discount fields must be finite and not negative; rounding may be negative', () => {
+  assert.equal(validateParsedReceipt(validParsedReceipt({ discount: 2, rounding: -0.02 })), null);
+  assert.match(validateParsedReceipt(validParsedReceipt({ discount: -1 })), /discount/i);
+  assert.match(validateParsedReceipt(validParsedReceipt({ discount: NaN })), /discount/i);
+  assert.match(validateParsedReceipt(validParsedReceipt({ rounding: Infinity })), /rounding/i);
+  assert.match(validateParsedReceipt(validParsedReceipt({ rounding: '0.01' })), /rounding/i);
+  const bad = validParsedReceipt();
+  bad.items[0].discount = -3;
+  assert.match(validateParsedReceipt(bad), /item discount/i);
+  const good = validParsedReceipt();
+  good.items[0].discount = 3;
+  assert.equal(validateParsedReceipt(good), null);
+});
+
+test('validateSplitCreateRequest: item discount, bill discount and rounding are shape-checked, absent is fine', () => {
+  assert.equal(validateSplitCreateRequest(validSplitBody()), null);
+  const body = validSplitBody();
+  body.items[0].discount = 1;
+  body.totals = { ...body.totals, discount: 0, rounding: -0.05 };
+  assert.equal(validateSplitCreateRequest(body), null);
+  const negItem = validSplitBody();
+  negItem.items[0].discount = -1;
+  assert.match(validateSplitCreateRequest(negItem), /item discount/i);
+  const negBill = validSplitBody();
+  negBill.totals = { ...negBill.totals, discount: -1 };
+  assert.match(validateSplitCreateRequest(negBill), /discount/i);
+  const badRound = validSplitBody();
+  badRound.totals = { ...badRound.totals, rounding: 'x' };
+  assert.match(validateSplitCreateRequest(badRound), /rounding/i);
+});

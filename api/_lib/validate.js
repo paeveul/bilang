@@ -207,12 +207,22 @@ function validateSplitCreateRequest(body) {
     if (typeof item.category !== 'string' || !VALID_CATEGORIES.includes(item.category)) {
       return 'Invalid item category';
     }
+    // Item discount: optional (an older client sends none), a plain number, never negative.
+    if (item.discount !== undefined && (!isFiniteNumber(item.discount) || item.discount < 0)) {
+      return 'Invalid item discount';
+    }
   }
   if (!body.assignments || typeof body.assignments !== 'object' || Array.isArray(body.assignments)) {
     return 'Missing or invalid assignments';
   }
   if (!body.totals || typeof body.totals !== 'object' || Array.isArray(body.totals)) {
     return 'Missing or invalid totals';
+  }
+  if (body.totals.discount !== undefined && (!isFiniteNumber(body.totals.discount) || body.totals.discount < 0)) {
+    return 'Invalid discount';
+  }
+  if (body.totals.rounding !== undefined && !isFiniteNumber(body.totals.rounding)) {
+    return 'Invalid rounding';
   }
   if (body.payers !== undefined) {
     const payersError = payersListError(body.payers);
@@ -281,6 +291,12 @@ function validateParsedReceipt(parsed) {
     if (!isFiniteNumber(item.line_total)) {
       return 'Malformed receipt data — invalid item line total';
     }
+    // strict:true cannot bound a number's range, so the discount is checked
+    // here. Missing reads as 0 (an older scan); a negative is normalised to
+    // positive by normalizeScanDiscounts() before this runs.
+    if (item.discount !== undefined && (!isFiniteNumber(item.discount) || item.discount < 0)) {
+      return 'Malformed receipt data — invalid item discount';
+    }
   }
   if (
     !isFiniteNumber(parsed.subtotal) ||
@@ -289,6 +305,12 @@ function validateParsedReceipt(parsed) {
     !isFiniteNumber(parsed.grand_total)
   ) {
     return 'Malformed receipt data — invalid totals';
+  }
+  if (parsed.discount !== undefined && (!isFiniteNumber(parsed.discount) || parsed.discount < 0)) {
+    return 'Malformed receipt data — invalid discount';
+  }
+  if (parsed.rounding !== undefined && !isFiniteNumber(parsed.rounding)) {
+    return 'Malformed receipt data — invalid rounding';
   }
   return null;
 }

@@ -6,6 +6,7 @@
 //
 
 const { parseReceipt } = require('./_lib/anthropic');
+const { normalizeScanDiscounts } = require('./_lib/totals');
 const { validateParseRequest, validateParsedReceipt } = require('./_lib/validate');
 const { requireAccount } = require('./_lib/auth');
 const { sendBadRequest, hasJsonContentType } = require('./_lib/bad-request');
@@ -42,7 +43,10 @@ module.exports = async function handler(req, res) {
     // should already be converted client-side, but fall back to jpeg's media
     // type rather than reject outright if one slips through.
     const effectiveMediaType = mimeType === 'image/heic' ? 'image/jpeg' : mimeType;
-    const { parsed } = await parseReceipt(image, effectiveMediaType);
+    const { parsed: rawParsed } = await parseReceipt(image, effectiveMediaType);
+    // Missing discount / rounding read as 0; a printed negative discount is
+    // stored positive. Nothing is invented. See normalizeScanDiscounts().
+    const parsed = normalizeScanDiscounts(rawParsed);
 
     // Don't rely on Anthropic's `strict: true` as the only control — check
     // the shape ourselves before it leaves this server. See validate.js's

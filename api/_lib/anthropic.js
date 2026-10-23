@@ -34,7 +34,20 @@ const RECEIPT_TOOL = {
             },
             qty: { type: 'number', description: 'Quantity ordered.' },
             unit_price: { type: 'number', description: 'Price per unit, in RM.' },
-            line_total: { type: 'number', description: 'Total price for this line, in RM.' },
+            line_total: {
+              type: 'number',
+              description:
+                'Price for this line in RM BEFORE any discount (the gross price as printed). ' +
+                'If the line shows only a net amount and no gross anywhere, use that net amount and set discount to 0.',
+            },
+            discount: {
+              type: 'number',
+              description:
+                'Discount printed against THIS item, in RM, as a positive number (a discount column on its ' +
+                'line, or a discount line directly under it that clearly belongs to it). 0 when the receipt ' +
+                'prints none. Never invent one. Record a discount shown with a minus sign or in brackets as a ' +
+                'positive number. Never output a negative line_total.',
+            },
             needs_check: {
               type: 'boolean',
               description:
@@ -43,7 +56,7 @@ const RECEIPT_TOOL = {
                 'whole line was read directly off the image.',
             },
           },
-          required: ['name', 'category', 'qty', 'unit_price', 'line_total', 'needs_check'],
+          required: ['name', 'category', 'qty', 'unit_price', 'line_total', 'discount', 'needs_check'],
           additionalProperties: false,
         },
       },
@@ -59,9 +72,23 @@ const RECEIPT_TOOL = {
         type: 'number',
         description: 'Tax amount (e.g. SST) in RM. Use 0 if the receipt has none.',
       },
+      discount: {
+        type: 'number',
+        description:
+          'Total of the discount lines that belong to the WHOLE bill (voucher, promo, member discount, ' +
+          '"total discount"), in RM, as a positive number. 0 when the receipt prints none. Never invent ' +
+          'one, and never include a discount already recorded against a single item.',
+      },
+      rounding: {
+        type: 'number',
+        description:
+          'The rounding line exactly as printed ("Rounding", "Round Adj", "Pembundaran"...), in ' +
+          'RM, SIGNED: positive when it adds to the bill, negative when it reduces it. 0 when the receipt ' +
+          'prints no rounding line. Never infer or invent one.',
+      },
       grand_total: {
         type: 'number',
-        description: 'Final total printed on the receipt, in RM.',
+        description: 'Final amount payable printed on the receipt (after rounding), in RM.',
       },
       merchant_name: {
         type: 'string',
@@ -87,7 +114,17 @@ const RECEIPT_TOOL = {
         description: "Why the receipt could not be read fully. \"none\" when read_quality is \"clear\".",
       },
     },
-    required: ['items', 'subtotal', 'service_charge', 'tax', 'grand_total', 'read_quality', 'unreadable_reason'],
+    required: [
+      'items',
+      'subtotal',
+      'service_charge',
+      'tax',
+      'discount',
+      'rounding',
+      'grand_total',
+      'read_quality',
+      'unreadable_reason',
+    ],
     additionalProperties: false,
   },
 };
@@ -167,7 +204,16 @@ async function parseReceipt(base64Image, mediaType, tier) {
             text:
               'This is a photo of a Malaysian restaurant/mamak receipt. Extract every line ' +
               'item with its category, quantity, unit price, and line total, plus the ' +
-              'subtotal, service charge, tax, and grand total. Also extract the merchant ' +
+              'subtotal, service charge, tax, and grand total. Discounts and rounding: record a ' +
+              'discount against the item it is printed on (item discount), and a discount that belongs ' +
+              'to the whole bill (voucher, promo, member, total discount) as the bill discount, both as ' +
+              'positive numbers. Use line_total as the price BEFORE the discount, so a discount is ' +
+              'subtracted once only: for a line showing 40.00 with "Disc -8.00" under it, line_total is ' +
+              '40.00 and the item discount is 8.00, not 32.00 and 8.00. If a discount could belong to ' +
+              'an item or to the bill and you cannot tell, record it as the bill discount and mark ' +
+              'needs_check. Record the rounding line exactly as printed, with its sign (positive adds ' +
+              'to the bill, negative reduces it). If the receipt prints no discount, every discount is ' +
+              '0; if it prints no rounding line, rounding is 0; never invent either. Also extract the merchant ' +
               'name and the receipt date (convert to ISO YYYY-MM-DD) if legible, leaving ' +
               'them out otherwise. The receipt may be faded thermal paper, handwritten, or ' +
               'photographed at an angle — do your best, but never invent a number or value ' +

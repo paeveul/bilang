@@ -107,10 +107,20 @@ test('needs_check is a required boolean on every item, not the receipt (S3)', ()
   assert.ok(!('needs_check' in RECEIPT_TOOL.input_schema.properties));
 });
 
-test('all pre-existing required fields are still required (S6) — the fix widens, it does not loosen', () => {
+test('all pre-existing required fields are still required (S6); only the discount and rounding fields were added: discount and rounding', () => {
   assert.deepEqual(
     RECEIPT_TOOL.input_schema.required,
-    ['items', 'subtotal', 'service_charge', 'tax', 'grand_total', 'read_quality', 'unreadable_reason']
+    [
+      'items',
+      'subtotal',
+      'service_charge',
+      'tax',
+      'discount',
+      'rounding',
+      'grand_total',
+      'read_quality',
+      'unreadable_reason',
+    ]
   );
 });
 
@@ -206,4 +216,38 @@ test('no tool_use block still throws the original generic error when stop_reason
     () => parseReceipt('base64data', 'image/jpeg'),
     /no tool_use block/
   );
+});
+
+// --- discount and rounding on the scan ---
+
+test('item discount, bill discount and signed rounding are required, plain numbers (strict mode cannot bound ranges)', () => {
+  const props = RECEIPT_TOOL.input_schema.properties;
+  const itemSchema = props.items.items;
+  assert.equal(itemSchema.properties.discount.type, 'number');
+  assert.ok(itemSchema.required.includes('discount'));
+  assert.equal(props.discount.type, 'number');
+  assert.equal(props.rounding.type, 'number');
+  assert.ok(RECEIPT_TOOL.input_schema.required.includes('discount'));
+  assert.ok(RECEIPT_TOOL.input_schema.required.includes('rounding'));
+  assert.equal(RECEIPT_TOOL.strict, true);
+  assert.equal(itemSchema.additionalProperties, false);
+  // No numeric range keywords: strict mode does not accept them.
+  for (const field of [itemSchema.properties.discount, props.discount, props.rounding]) {
+    assert.ok(!('minimum' in field) && !('maximum' in field));
+  }
+});
+
+test('line_total is documented as the price BEFORE discount, and rounding as signed', () => {
+  const itemSchema = RECEIPT_TOOL.input_schema.properties.items.items;
+  assert.match(itemSchema.properties.line_total.description, /BEFORE any discount/);
+  assert.match(RECEIPT_TOOL.input_schema.properties.rounding.description, /SIGNED/);
+});
+
+test('the prompt says nothing is invented, discount is subtracted once, rounding keeps its sign', async () => {
+  await parseReceipt('AAAA', 'image/jpeg');
+  const text = calls[0].messages[0].content.find((b) => b.type === 'text').text;
+  assert.match(text, /never invent either/);
+  assert.match(text, /40\.00 and the item discount is 8\.00, not 32\.00 and 8\.00/);
+  assert.match(text, /with its sign/);
+  assert.match(text, /needs_check/);
 });
