@@ -58,6 +58,51 @@ function manualAmountsOf(assignment) {
 
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 
+/** A discount in cents, always zero or positive. A printed negative is stored as a positive discount. */
+function discountCentsOf(value) {
+  return Math.abs(toCents(value));
+}
+
+/**
+ * What an item costs after its own discount, in cents. `line_total` is the
+ * gross price as printed; `discount` is the amount taken off THIS item. A
+ * missing discount reads as 0, so an old item gives back its line total.
+ * Never below zero (a discount larger than its item is refused by
+ * reconcileReceipt, and cannot make a negative line here).
+ */
+function itemNetCents(item) {
+  return Math.max(0, toCents(item.line_total) - discountCentsOf(item.discount));
+}
+
+/**
+ * Splits a signed amount (cents) across weights with the largest-remainder
+ * method: every part is within 1 cent of the exact proportion, the parts add
+ * to the amount exactly, and a weight of 0 never receives a cent. When every
+ * weight is 0 the whole amount goes to the LAST slot (the unclaimed slot).
+ */
+function allocateByWeight(amount, weights) {
+  const out = weights.map(() => 0);
+  if (amount === 0 || weights.length === 0) return out;
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  if (total <= 0) {
+    out[out.length - 1] = amount;
+    return out;
+  }
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? -1 : 1;
+  const remainders = [];
+  let used = 0;
+  weights.forEach((w, i) => {
+    const numerator = abs * w;
+    out[i] = Math.floor(numerator / total);
+    remainders.push(numerator - out[i] * total);
+    used += out[i];
+  });
+  const order = weights.map((_, i) => i).sort((a, b) => remainders[b] - remainders[a] || a - b);
+  for (let k = 0; k < abs - used; k += 1) out[order[k]] += 1;
+  return out.map((v) => (v === 0 ? 0 : v * sign));
+}
+
 /**
  * @typedef {object} Item
  * @property {string} id
@@ -65,13 +110,16 @@ const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key
  * @property {string} category
  * @property {number} qty
  * @property {number} unit_price
- * @property {number} line_total
+ * @property {number} line_total - gross price as printed, before any item discount
+ * @property {number} [discount] - discount against THIS item (default 0)
  *
  * @typedef {object} BillTotals
  * @property {number} subtotal
  * @property {number} service_charge
  * @property {number} tax
  * @property {number} grand_total
+ * @property {number} [discount] - bill-level discount, positive (default 0)
+ * @property {number} [rounding] - signed rounding line as printed (default 0)
  *
  * @param {Item[]} items
  * @param {Object<string, string[]|{mode:'equal',equal:string[]}|{mode:'manual',amounts:Object<string,number>}>} assignments
@@ -85,9 +133,9 @@ const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key
  * @param {BillTotals} billTotals
  * @param {string[]} payers - all payer names, in display order
  * @returns {{
- *   perPerson: Object<string, {itemsCents:number, taxCents:number, serviceCents:number, totalCents:number}>,
+ *   perPerson: Object<string, {itemsCents:number, taxCents:number, serviceCents:number, [discountCents]:number, [roundingCents]:number, totalCents:number}>,
  *   itemizedSubtotalCents: number,
- *   unclaimed: {itemsCents:number, taxCents:number, serviceCents:number, totalCents:number},
+ *   unclaimed: {itemsCents:number, taxCents:number, serviceCents:number, [discountCents]:number, [roundingCents]:number, totalCents:number} (bracketed keys exist only when the bill has a discount or rounding; read them as 0 otherwise),
  *   reconciliation: {itemizedSubtotalCents:number, statedSubtotalCents:number, matches:boolean}
  * }}
  */
@@ -99,7 +147,12 @@ function computeTotals(items, assignments, billTotals, payers) {
   // shape as before, built from the same accumulators.
   const accounts = new Map();
   for (const name of payers) {
-    accounts.set(name, { itemsCents: 0, taxCents: 0, serviceCents: 0, totalCents: 0 });
+    accounts.set(name, {
+      itemsCents: 0,
+      taxCents: 0,
+      serviceCents: 0,
+      totalCents: 0,
+    });
   }
 
   let itemizedSubtotalCents = 0;
@@ -107,7 +160,9 @@ function computeTotals(items, assignments, billTotals, payers) {
 
   for (const item of items) {
     const assignment = hasOwn(assignments, item.id) ? assignments[item.id] : undefined;
-    const lineCents = toCents(item.line_total);
+    // Net of the item's own discount: this is what gets split and what weighs
+    // in the bill-line shares. With no discount it is the line total, as before.
+    const lineCents = itemNetCents(item);
 
     if (assignment && !Array.isArray(assignment) && assignment.mode === 'manual') {
       const amounts = manualAmountsOf(assignment);
@@ -161,53 +216,90 @@ function computeTotals(items, assignments, billTotals, payers) {
 
   const billTaxCents = toCents(billTotals.tax);
   const billServiceCents = toCents(billTotals.service_charge);
+  const billDiscountCents = discountCentsOf(billTotals.discount);
+  const billRoundingCents = toCents(billTotals.rounding);
 
-  // Tax and service are computed only on claimed items. When some items are
-  // unclaimed, the bill's tax and service are first divided between the claimed
-  // and the unclaimed items by their share of the itemized amount; only the
-  // claimed part is charged to people. With nothing unclaimed the whole amount
-  // goes to the claimed items, exactly as before.
-  let taxCents = billTaxCents;
-  let serviceCents = billServiceCents;
   let unclaimedTaxCents = 0;
   let unclaimedServiceCents = 0;
-  if (unclaimedItemsCents > 0) {
-    const basisCents = itemizedSubtotalCents + unclaimedItemsCents;
-    taxCents = itemizedSubtotalCents > 0 ? Math.round((billTaxCents * itemizedSubtotalCents) / basisCents) : 0;
-    serviceCents =
-      itemizedSubtotalCents > 0 ? Math.round((billServiceCents * itemizedSubtotalCents) / basisCents) : 0;
-    unclaimedTaxCents = billTaxCents - taxCents;
-    unclaimedServiceCents = billServiceCents - serviceCents;
-  }
+  let unclaimedDiscountCents = 0;
+  let unclaimedRoundingCents = 0;
 
-  if (itemizedSubtotalCents > 0) {
-    // Apportion tax + service charge pro-rata by each payer's share of the
-    // ACTUAL itemized subtotal assigned to them — not the receipt's own
-    // stated subtotal field — so the math stays internally consistent even
-    // if the item review step left a small mismatch against that field.
-    let taxRemaining = taxCents;
-    let serviceRemaining = serviceCents;
-    const namesWithItems = payers.filter((n) => accounts.get(n).itemsCents > 0);
+  if (billDiscountCents === 0 && billRoundingCents === 0) {
+    // No bill-level discount and no rounding: the original tax / service
+    // arithmetic, unchanged, so a bill without them gives exactly the figures
+    // it always did (an item discount already acts through the net item cents).
+    //
+    // Tax and service are computed only on claimed items. When some items are
+    // unclaimed, the bill's tax and service are first divided between the claimed
+    // and the unclaimed items by their share of the itemized amount; only the
+    // claimed part is charged to people. With nothing unclaimed the whole amount
+    // goes to the claimed items, exactly as before.
+    let taxCents = billTaxCents;
+    let serviceCents = billServiceCents;
+    if (unclaimedItemsCents > 0) {
+      const basisCents = itemizedSubtotalCents + unclaimedItemsCents;
+      taxCents = itemizedSubtotalCents > 0 ? Math.round((billTaxCents * itemizedSubtotalCents) / basisCents) : 0;
+      serviceCents =
+        itemizedSubtotalCents > 0 ? Math.round((billServiceCents * itemizedSubtotalCents) / basisCents) : 0;
+      unclaimedTaxCents = billTaxCents - taxCents;
+      unclaimedServiceCents = billServiceCents - serviceCents;
+    }
 
-    namesWithItems.forEach((name, idx) => {
-      const isLast = idx === namesWithItems.length - 1;
+    if (itemizedSubtotalCents > 0) {
+      // Apportion tax + service charge pro-rata by each payer's share of the
+      // ACTUAL itemized subtotal assigned to them — not the receipt's own
+      // stated subtotal field — so the math stays internally consistent even
+      // if the item review step left a small mismatch against that field.
+      let taxRemaining = taxCents;
+      let serviceRemaining = serviceCents;
+      const namesWithItems = payers.filter((n) => accounts.get(n).itemsCents > 0);
+
+      namesWithItems.forEach((name, idx) => {
+        const isLast = idx === namesWithItems.length - 1;
+        const p = accounts.get(name);
+        const shareRatio = p.itemsCents / itemizedSubtotalCents;
+
+        const taxShare = isLast ? taxRemaining : Math.round(taxCents * shareRatio);
+        const serviceShare = isLast ? serviceRemaining : Math.round(serviceCents * shareRatio);
+
+        p.taxCents = taxShare;
+        p.serviceCents = serviceShare;
+        taxRemaining -= taxShare;
+        serviceRemaining -= serviceShare;
+      });
+    }
+  } else {
+    // A bill-level discount or a rounding line is present. Weights are each
+    // person's net item cents; unclaimed items carry weight too (last slot).
+    // Every bill line is split by the largest-remainder method, so each
+    // person's share of each line is within 1 cent of exact, the shares plus
+    // the unclaimed part add to the line exactly, and someone with weight 0
+    // gets nothing. Rounding is spread by weight, never added on top.
+    const weights = payers.map((n) => accounts.get(n).itemsCents);
+    weights.push(unclaimedItemsCents);
+    const discountShares = allocateByWeight(billDiscountCents, weights);
+    const serviceShares = allocateByWeight(billServiceCents, weights);
+    const taxShares = allocateByWeight(billTaxCents, weights);
+    const roundingShares = allocateByWeight(billRoundingCents, weights);
+    payers.forEach((name, i) => {
       const p = accounts.get(name);
-      const shareRatio = p.itemsCents / itemizedSubtotalCents;
-
-      const taxShare = isLast ? taxRemaining : Math.round(taxCents * shareRatio);
-      const serviceShare = isLast ? serviceRemaining : Math.round(serviceCents * shareRatio);
-
-      p.taxCents = taxShare;
-      p.serviceCents = serviceShare;
-      taxRemaining -= taxShare;
-      serviceRemaining -= serviceShare;
+      p.discountCents = discountShares[i];
+      p.serviceCents = serviceShares[i];
+      p.taxCents = taxShares[i];
+      p.roundingCents = roundingShares[i];
     });
+    const last = weights.length - 1;
+    unclaimedDiscountCents = discountShares[last];
+    unclaimedServiceCents = serviceShares[last];
+    unclaimedTaxCents = taxShares[last];
+    unclaimedRoundingCents = roundingShares[last];
   }
 
   const perPerson = {};
   for (const name of payers) {
     const p = accounts.get(name);
-    p.totalCents = p.itemsCents + p.taxCents + p.serviceCents;
+    p.totalCents =
+      p.itemsCents + p.taxCents + p.serviceCents + (p.roundingCents || 0) - (p.discountCents || 0);
     // defineProperty, not assignment, so even a "__proto__" name is stored as
     // an own key rather than changing the object's prototype.
     Object.defineProperty(perPerson, name, { value: p, enumerable: true, writable: true, configurable: true });
@@ -222,20 +314,157 @@ function computeTotals(items, assignments, billTotals, payers) {
       itemsCents: unclaimedItemsCents,
       taxCents: unclaimedTaxCents,
       serviceCents: unclaimedServiceCents,
-      totalCents: unclaimedItemsCents + unclaimedTaxCents + unclaimedServiceCents,
+      // Present only when the bill has a discount or rounding, so a bill
+      // without them reports the same unclaimed figures, same shape, as before.
+      ...(billDiscountCents !== 0 || billRoundingCents !== 0
+        ? { discountCents: unclaimedDiscountCents, roundingCents: unclaimedRoundingCents }
+        : {}),
+      totalCents:
+        unclaimedItemsCents +
+        unclaimedTaxCents +
+        unclaimedServiceCents +
+        unclaimedRoundingCents -
+        unclaimedDiscountCents,
     },
     reconciliation: {
       itemizedSubtotalCents,
       statedSubtotalCents,
-      // Allow a small rounding tolerance (1 cent) before flagging a mismatch.
+      // Item-sum vs stated subtotal, kept for older callers. The check that
+      // decides whether a bill adds up to the receipt is reconcileReceipt().
       matches: Math.abs(itemizedSubtotalCents - statedSubtotalCents) < 2,
     },
   };
 }
 
+/**
+ * True when the receipt carries any of the discount / rounding fields (an item
+ * `discount`, a bill `discount`, or `rounding`). A split saved before those
+ * fields existed has none of them, so the exact check does not apply to it.
+ */
+function hasDiscountFields(items, billTotals) {
+  const t = billTotals || {};
+  return (
+    t.discount !== undefined ||
+    t.rounding !== undefined ||
+    (Array.isArray(items) && items.some((item) => item && item.discount !== undefined))
+  );
+}
+
+/**
+ * The exact receipt check, in integer cents, no tolerance:
+ *
+ *   sum(line_total - item discount) - discount + service_charge + tax + rounding = grand_total
+ *
+ * `subtotal` is not part of it. Negative discounts are read as positive.
+ * `differenceCents` is grand_total minus what the lines add up to: positive
+ * means the receipt prints more than the lines explain. Adding it to the
+ * rounding makes the check exact (see suggestedRoundingRM).
+ *
+ * @returns {{
+ *   applicable: boolean,      // false for a split saved before these fields existed
+ *   matches: boolean,         // differenceCents === 0 and no errors
+ *   computedCents: number,
+ *   grandTotalCents: number,
+ *   differenceCents: number,
+ *   errors: Array<{code:'discount_exceeds_item'|'negative_item_line', index:number, id:*}>,
+ *   hint: null | {code:'discount_mismatch', amountCents:number, multiple:1|2}
+ * }}
+ */
+function reconcileReceipt(items, billTotals) {
+  const t = billTotals || {};
+  const list = Array.isArray(items) ? items : [];
+  const errors = [];
+  const discountAmounts = [];
+  let itemsNetCents = 0;
+  list.forEach((item, index) => {
+    const lineCents = toCents(item.line_total);
+    const discCents = discountCentsOf(item.discount);
+    if (lineCents < 0) errors.push({ code: 'negative_item_line', index, id: item.id });
+    else if (discCents > lineCents) errors.push({ code: 'discount_exceeds_item', index, id: item.id });
+    if (discCents > 0) discountAmounts.push(discCents);
+    itemsNetCents += lineCents - discCents;
+  });
+  const billDiscountCents = discountCentsOf(t.discount);
+  if (billDiscountCents > 0) discountAmounts.push(billDiscountCents);
+
+  const computedCents =
+    itemsNetCents - billDiscountCents + toCents(t.service_charge) + toCents(t.tax) + toCents(t.rounding);
+  const grandTotalCents = toCents(t.grand_total);
+  const differenceCents = grandTotalCents - computedCents;
+
+  // Off by exactly one discount amount (or its double): the usual sign of a
+  // discount counted twice, or counted when the line already showed the net.
+  let hint = null;
+  if (differenceCents !== 0) {
+    for (const amountCents of discountAmounts) {
+      if (Math.abs(differenceCents) === amountCents) {
+        hint = { code: 'discount_mismatch', amountCents, multiple: 1 };
+        break;
+      }
+      if (Math.abs(differenceCents) === 2 * amountCents) {
+        hint = { code: 'discount_mismatch', amountCents, multiple: 2 };
+        break;
+      }
+    }
+  }
+
+  return {
+    applicable: hasDiscountFields(items, billTotals),
+    matches: differenceCents === 0 && errors.length === 0,
+    computedCents,
+    grandTotalCents,
+    differenceCents,
+    errors,
+    hint,
+  };
+}
+
+/**
+ * The rounding (RM, signed) that would make the receipt add up exactly: the
+ * current rounding plus the leftover difference. For the host's explicit
+ * "use this difference as rounding" action; nothing calls it automatically.
+ */
+function suggestedRoundingRM(items, billTotals) {
+  const { differenceCents } = reconcileReceipt(items, billTotals);
+  return fromCents(toCents((billTotals || {}).rounding) + differenceCents);
+}
+
+/**
+ * Tidies a scan result so the maths only ever sees clean figures:
+ *  - a missing item `discount`, bill `discount` or `rounding` becomes 0;
+ *  - a printed negative discount becomes a positive one;
+ *  - an item line with a negative amount is a discount line that was read as
+ *    an item: it is removed and its amount added to the bill-level discount
+ *    (its position is unclear, so bill level);
+ *  - `rounding` keeps its sign. Nothing is ever invented.
+ * Returns a new object; the input is not changed.
+ */
+function normalizeScanDiscounts(parsed) {
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.items)) return parsed;
+  let billDiscountCents = discountCentsOf(parsed.discount);
+  const items = [];
+  for (const item of parsed.items) {
+    if (!item || typeof item !== 'object') {
+      items.push(item);
+      continue;
+    }
+    if (Number.isFinite(item.line_total) && item.line_total < 0) {
+      billDiscountCents += Math.abs(toCents(item.line_total));
+      continue;
+    }
+    items.push({ ...item, discount: fromCents(discountCentsOf(item.discount)) });
+  }
+  return {
+    ...parsed,
+    items,
+    discount: fromCents(billDiscountCents),
+    rounding: Number.isFinite(parsed.rounding) ? parsed.rounding : 0,
+  };
+}
+
 function manualItemRemainingCents(item, assignment) {
   if (!assignment || assignment.mode !== 'manual') return 0;
-  const lineCents = toCents(item.line_total);
+  const lineCents = itemNetCents(item);
   const values = assignment.manual?.values || {};
   const allocatedCents = Object.values(values).reduce(
     (sum, v) => sum + (Math.round(Number(v?.cents)) || 0),
@@ -253,4 +482,9 @@ module.exports = {
   centsToPercent,
   computeTotals,
   manualItemRemainingCents,
+  itemNetCents,
+  hasDiscountFields,
+  reconcileReceipt,
+  suggestedRoundingRM,
+  normalizeScanDiscounts,
 };

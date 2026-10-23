@@ -13,4 +13,9 @@ export {
   centsToPercent,
   computeTotals,
   manualItemRemainingCents,
+  itemNetCents,
+  hasDiscountFields,
+  reconcileReceipt,
+  suggestedRoundingRM,
+  normalizeScanDiscounts,
 } from '../api/_lib/totals.js';
