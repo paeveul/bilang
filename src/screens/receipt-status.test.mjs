@@ -114,3 +114,8 @@ test('hint: twice a discount counts, a bill discount match points at the bill, s
 test('no hint when the difference matches no discount', () => {
   assert.equal(computeReceiptStatus(items(), bill({ grand_total: 114.95 })).hint, null);
 });
+
+test('the use-as-rounding shortcut is switched off: the app never rewrites a scanned figure', async () => {
+  const { ALLOW_USE_DIFFERENCE_AS_ROUNDING } = await import('./receipt-status.js');
+  assert.equal(ALLOW_USE_DIFFERENCE_AS_ROUNDING, false);
+});

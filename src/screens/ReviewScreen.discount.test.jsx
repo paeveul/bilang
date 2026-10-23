@@ -195,49 +195,59 @@ test('Confirm does nothing while the receipt does not add up', async () => {
   assert.notEqual(currentScreen(), 'payment');
 });
 
-test('use this difference as rounding: a small gap is booked, tagged Edited by you, Undo puts it back', async () => {
+const roundingButton = () => screen.queryByRole('button', { name: 'Use this difference as rounding' });
+
+test('a small gap is never booked as rounding by the app: no button, status stays red, Confirm off', async () => {
   const user = userEvent.setup();
   renderWith(plainBill());
   await setGrandTotal(user, 114.97);
   assert.match(status().textContent, /RM 0\.03 short/);
-  await user.click(screen.getByRole('button', { name: 'Use this difference as rounding' }));
-  assert.equal(status().getAttribute('data-state'), 'ok');
-  const roundingRow = screen.getByTestId('rounding-row');
-  assert.equal(within(roundingRow).getByLabelText('Rounding amount').value, '0.03');
-  assert.match(screen.getByTestId('rounding-summary').textContent, /Adds RM 0\.03 to the bill/);
-  assert.ok(screen.getByTestId('rounding-edited-tag'));
-  assert.equal(document.activeElement, within(roundingRow).getByLabelText('Rounding amount'));
-  assert.equal(confirm().disabled, false);
-
-  await user.click(screen.getByRole('button', { name: 'Undo' }));
-  assert.equal(screen.queryByTestId('rounding-edited-tag'), null);
-  assert.match(status().textContent, /RM 0\.03 short/);
+  assert.equal(roundingButton(), null);
+  assert.equal(screen.queryByTestId('rounding-too-big'), null);
+  assert.equal(status().getAttribute('data-state'), 'error');
+  assert.equal(confirm().disabled, true);
+  assert.equal(screen.queryByTestId('rounding-row'), null);
 });
 
-test('use this difference as rounding when over: it takes off, and adds to rounding already there', async () => {
+test('the host can still hand-correct the rounding to match the paper receipt; Undo puts it back', async () => {
+  const user = userEvent.setup();
+  renderWith(plainBill({ rounding: 0.01, grand_total: 114.95 }));
+  assert.equal(status().getAttribute('data-state'), 'ok');
+  const roundingRow = screen.getByTestId('rounding-row');
+  const field = within(roundingRow).getByLabelText('Rounding amount');
+  await setGrandTotal(user, 114.97);
+  assert.match(status().textContent, /RM 0\.02 short/);
+  assert.equal(roundingButton(), null);
+  await user.clear(field);
+  await user.type(field, '0.03');
+  assert.equal(status().getAttribute('data-state'), 'ok');
+  assert.ok(screen.getByTestId('rounding-edited-tag'));
+  assert.equal(confirm().disabled, false);
+  await user.click(screen.getByRole('button', { name: 'Undo' }));
+  assert.equal(screen.queryByTestId('rounding-edited-tag'), null);
+  assert.match(status().textContent, /RM 0\.02 short/);
+});
+
+test('over by a few sen with a rounding already there: no button is offered', async () => {
   const user = userEvent.setup();
   renderWith(billWithDiscountAndRounding());
   await setGrandTotal(user, 104.93);
-  await user.click(screen.getByRole('button', { name: 'Use this difference as rounding' }));
-  const roundingRow = screen.getByTestId('rounding-row');
-  // +0.01 already there, 0.02 over: the new rounding is -0.01.
-  assert.equal(within(roundingRow).getByLabelText('Rounding amount').value, '0.01');
-  assert.match(screen.getByTestId('rounding-summary').textContent, /Takes RM 0\.01 off the bill/);
-  assert.equal(status().getAttribute('data-state'), 'ok');
+  assert.match(status().textContent, /RM 0\.02 over/);
+  assert.equal(roundingButton(), null);
+  assert.equal(screen.queryByTestId('rounding-too-big'), null);
+  assert.equal(within(screen.getByTestId('rounding-row')).getByLabelText('Rounding amount').value, '0.01');
 });
 
-test('the largest rounding that can be booked is RM 0.05; above that the button is replaced by a line', async () => {
+test('whatever the size of the gap, neither the rounding button nor the too-big line is shown', async () => {
   const user = userEvent.setup();
   renderWith(plainBill());
-  await setGrandTotal(user, 114.99);
-  assert.ok(screen.getByRole('button', { name: 'Use this difference as rounding' }));
-  await setGrandTotal(user, 115);
-  assert.equal(screen.queryByRole('button', { name: 'Use this difference as rounding' }), null);
-  assert.match(screen.getByTestId('rounding-too-big').textContent, /This is too big to be rounding\. Check your items and amounts\./);
-  await setGrandTotal(user, 115.94);
-  assert.equal(screen.queryByRole('button', { name: 'Use this difference as rounding' }), null);
-  assert.ok(screen.getByTestId('rounding-too-big'));
-  assert.equal(confirm().disabled, true);
+  for (const total of [114.99, 115, 115.94]) {
+    await setGrandTotal(user, total);
+    assert.equal(roundingButton(), null);
+    assert.equal(screen.queryByTestId('rounding-too-big'), null);
+    assert.equal(status().getAttribute('data-state'), 'error');
+    assert.equal(confirm().disabled, true);
+  }
 });
 
 test('a difference equal to a discount shows the hint in addition to the exact difference', async () => {

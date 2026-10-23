@@ -5,10 +5,12 @@
 
 import { billDiscountExceedsItems, reconcileReceipt, toCents } from '../../js/totals.js';
 
-// One switch for the one-tap "Use this difference as rounding". Set it to
-// false to remove the button, its lead-in line and the "too big to be
-// rounding" line; nothing else changes.
-export const ALLOW_USE_DIFFERENCE_AS_ROUNDING = true;
+// One switch for the one-tap "Use this difference as rounding". It is off: the
+// app never changes a scanned rounding, discount or total by itself, so the
+// button, its lead-in line and the "too big to be rounding" line are not shown.
+// The host can still correct a misread field by hand. Set it to true to bring
+// them back; nothing else changes.
+export const ALLOW_USE_DIFFERENCE_AS_ROUNDING = false;
 
 // The most the host may book as rounding in one tap (RM 0.05), counted on the
 // resulting Rounding (what is already there plus the difference).
