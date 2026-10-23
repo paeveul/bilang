@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { computeTotals, formatRM, fromCents } from '../../js/totals.js';
 import { usePolledSplit } from '../hooks/usePolledSplit.js';
 import { PayerItemRow } from './payer-item-row.js';
+import { PayerBillLines } from './discount-lines.js';
 import ClaimableItemRow from './ClaimableItemRow.jsx';
 import { computeRowState, namesList } from './claim-row-state.js';
 import StickyTotalsBar from '../components/StickyTotalsBar.jsx';
@@ -250,6 +251,7 @@ export default function PayerScreen({ id }) {
                 <PayerItemRow key={item.id ?? item.name} item={item} />
               ))}
             </div>
+            <PayerBillLines totals={split.totals} />
           </div>
           <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
             <h3 className="font-semibold text-sm text-slate-700">Who owes what</h3>
@@ -355,6 +357,7 @@ export default function PayerScreen({ id }) {
             snapTick={snapTick}
           />
         ))}
+        <PayerBillLines totals={split.totals} />
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">

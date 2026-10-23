@@ -1,3 +1,5 @@
+import { itemNetCents } from '../../js/totals.js';
+
 function manualAmountsOf(assignment) {
   const values = (assignment.manual && assignment.manual.values) || {};
   const amounts = {};
@@ -36,7 +38,8 @@ function equalShares(lineCents, names) {
  * }}
  */
 export function computeRowState(item, assignment, roster, me) {
-  const lineCents = Math.round((Number(item.line_total) || 0) * 100);
+  // What the item costs after its own discount (the line total when it has none).
+  const lineCents = itemNetCents(item);
   const isManual = assignment && !Array.isArray(assignment) && assignment.mode === 'manual';
   const claimed = Boolean(assignment) && !Array.isArray(assignment) && assignment.mode === 'equal' && assignment.claimed === true;
 

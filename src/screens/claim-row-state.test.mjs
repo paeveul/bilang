@@ -94,3 +94,13 @@ test('me = null (no identity chosen yet): mineIncluded is always false', () => {
   assert.equal(s.mineIncluded, false);
   assert.equal(s.kind, 'other-alone');
 });
+
+test('an item with a discount is worked out on the price after the discount', () => {
+  const discounted = { line_total: 10, discount: 4 };
+  const a = { mode: 'equal', equal: ['Farah', 'Ben'], manual: { unit: 'RM', values: {} }, claimed: true };
+  const s = computeRowState(discounted, a, roster, 'Farah');
+  assert.equal(s.kind, 'mine-shared');
+  assert.equal(s.shareCents, 300);
+  const manual = { mode: 'manual', manual: { unit: 'RM', values: { Farah: { cents: 600 } } } };
+  assert.equal(computeRowState(discounted, manual, roster, 'Farah').kind, 'host-set');
+});

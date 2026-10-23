@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { computeRowState, namesList } from './claim-row-state.js';
 import { formatRM } from '../../js/totals.js';
+import { ItemDiscountLine, itemNetRM } from './discount-lines.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import AnimatedMoney from '../components/AnimatedMoney.jsx';
 
@@ -54,8 +55,11 @@ export default function ClaimableItemRow({
   return (
     <motion.div layout className="py-2 border-b border-slate-100 last:border-0" data-item-id={item.id}>
       <div className="flex justify-between items-start gap-2">
-        <span className="flex-1 text-sm font-medium">{item.name}</span>
-        <span className="text-sm font-semibold tabular-nums">{formatRM(item.line_total)}</span>
+        <span className="flex-1">
+          <span className="block text-sm font-medium">{item.name}</span>
+          <ItemDiscountLine item={item} />
+        </span>
+        <span className="shrink-0 text-sm font-semibold tabular-nums">{formatRM(itemNetRM(item))}</span>
       </div>
 
       <div className="flex items-center gap-2 mt-0.5">

@@ -10,13 +10,20 @@
 //
 import { createElement as h } from 'react';
 import { formatRM } from '../../js/totals.js';
+import { ItemDiscountLine, itemNetRM } from './discount-lines.js';
 
 export function PayerItemRow({ item }) {
   return h(
     'div',
     { className: 'flex justify-between text-sm' },
-    h('span', null, item.name, h('span', { className: 'text-slate-400' }, ' ×', item.qty)),
-    h('span', null, formatRM(item.line_total))
+    h(
+      'span',
+      null,
+      item.name,
+      h('span', { className: 'text-slate-400' }, ' ×', item.qty),
+      h(ItemDiscountLine, { item })
+    ),
+    h('span', { className: 'shrink-0' }, formatRM(itemNetRM(item)))
   );
 }
 
