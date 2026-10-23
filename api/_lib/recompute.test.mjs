@@ -191,3 +191,16 @@ test('per_person fallback with reserved keys: they are not payers, stored per_pe
   assert.equal(Object.getPrototypeOf(out.totals.per_person), Object.prototype);
   assert.equal(JSON.stringify(Object.keys(JSON.parse(JSON.stringify(out.totals.per_person)))), '["Ali"]');
 });
+
+test('scanned figures: recompute and claim totals change only the per-person and unclaimed figures', () => {
+  const printed = { subtotal: 14, service_charge: 1.4, tax: 0.84, discount: 0.77, rounding: 0.02, grand_total: 15.51 };
+  const b = body({ totals: { ...printed, rounding_edited: true, per_person: {} } });
+  const itemsBefore = JSON.stringify(b.items);
+  const out = recomputeSplitTotals(b).totals;
+  const claimed = computeClaimTotals(b.items, b.assignments, { ...printed, per_person: {} }, b.payers);
+  for (const t of [out, claimed]) {
+    for (const f of Object.keys(printed)) assert.equal(t[f], printed[f], f);
+  }
+  assert.equal(out.rounding_edited, true);
+  assert.equal(JSON.stringify(b.items), itemsBefore);
+});

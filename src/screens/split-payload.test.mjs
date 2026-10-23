@@ -224,3 +224,44 @@ test("the per-person preview includes each person's share of the bill discount a
   const sum = Object.values(body.totals.per_person).reduce((a, v) => a + Math.round(v * 100), 0);
   assert.equal(sum, 9121);
 });
+
+const scannedBill = {
+  items: [
+    { id: 'a', name: 'Nasi', category: 'food', qty: 1, unit_price: 50, line_total: 50, discount: 0 },
+    { id: 'b', name: 'Mee', category: 'food', qty: 1, unit_price: 30, line_total: 30, discount: 3.33 },
+    { id: 'c', name: 'Teh', category: 'drink', qty: 1, unit_price: 20, line_total: 20, discount: 0 },
+  ],
+  subtotal: 100,
+  service_charge: 9,
+  tax: 5.94,
+  discount: 7.77,
+  rounding: 0.02,
+  scanned_rounding: 0.02,
+  grand_total: 103.86,
+};
+
+test('scanned figures: the payload sends every printed figure and item exactly as scanned, with no edited flag', () => {
+  const body = buildSplitPayload({
+    parsed: scannedBill,
+    payers: ['Ali', 'Bea'],
+    assignments: { a: ['Ali'], b: ['Bea'], c: ['Ali', 'Bea'] },
+    ownerPaymentHandle: 'x',
+  });
+  for (const f of ['subtotal', 'service_charge', 'tax', 'discount', 'rounding', 'grand_total']) {
+    assert.equal(body.totals[f], scannedBill[f], f);
+  }
+  assert.equal('rounding_edited' in body.totals, false);
+  assert.deepEqual(body.items, scannedBill.items);
+});
+
+test('scanned figures: a hand-edited rounding is sent as the host typed it, and only then is it flagged', () => {
+  const body = buildSplitPayload({
+    parsed: { ...scannedBill, rounding: 0.03, grand_total: 103.87 },
+    payers: ['Ali'],
+    assignments: { a: ['Ali'], b: ['Ali'], c: ['Ali'] },
+    ownerPaymentHandle: 'x',
+  });
+  assert.equal(body.totals.rounding, 0.03);
+  assert.equal(body.totals.rounding_edited, true);
+  assert.equal(body.totals.discount, 7.77);
+});

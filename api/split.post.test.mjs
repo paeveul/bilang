@@ -427,3 +427,32 @@ test('split POST: an older payload with none of the new fields still goes throug
   assert.equal(stored[0].totals.discount, undefined);
   assert.equal(stored[0].totals.rounding_edited, undefined);
 });
+
+test('scanned figures: every printed figure and item is stored exactly as sent, and no edited flag appears by itself', async () => {
+  const sent = exactPostBody({ discount: 7.77, rounding: 0.02, grand_total: 107.19 });
+  const itemsBefore = JSON.stringify(sent.items);
+  const { res } = await post(sent);
+  assert.equal(res.statusCode, 201);
+  const t = stored[0].totals;
+  assert.equal(t.subtotal, 100);
+  assert.equal(t.service_charge, 9);
+  assert.equal(t.tax, 5.94);
+  assert.equal(t.discount, 7.77);
+  assert.equal(t.rounding, 0.02);
+  assert.equal(t.grand_total, 107.19);
+  assert.equal('rounding_edited' in t, false);
+  assert.equal(JSON.stringify(stored[0].items), itemsBefore);
+});
+
+test('scanned figures: reading the split back returns the same printed figures that were stored', async () => {
+  await post(exactPostBody({ discount: 7.77, rounding: 0.02, grand_total: 107.19 }));
+  splitRow = { id: 'x', ...stored[0], version: 0 };
+  const res = fakeRes();
+  await handler({ method: 'GET', query: { id: 'x' }, headers: {} }, res);
+  assert.equal(res.statusCode, 200);
+  for (const f of ['subtotal', 'service_charge', 'tax', 'discount', 'rounding', 'grand_total']) {
+    assert.equal(res.body.totals[f], stored[0].totals[f], f);
+  }
+  assert.deepEqual(res.body.items, stored[0].items);
+  splitRow = null;
+});

@@ -343,3 +343,59 @@ test('D8/D2: ADD_PAYER refuses a name that matches an existing person by the sha
   }
   assert.deepEqual(reducer(base, { type: 'ADD_PAYER', name: 'Bea' }).payers, ['Me', 'Ben Tan', 'Bea']);
 });
+
+// --- scanned figures are never rewritten --------------------------------
+
+const SCANNED_BILL = {
+  items: [
+    { name: 'Nasi', category: 'food', qty: 1, unit_price: 50, line_total: 50, discount: 0 },
+    { name: 'Mee', category: 'food', qty: 1, unit_price: 30, line_total: 30, discount: 3.33 },
+    { name: 'Teh', category: 'drink', qty: 1, unit_price: 20, line_total: 20, discount: 0 },
+  ],
+  subtotal: 100,
+  service_charge: 9,
+  tax: 5.94,
+  discount: 7.77,
+  rounding: 0.02,
+  grand_total: 103.86,
+};
+const FIGURES = ['subtotal', 'service_charge', 'tax', 'discount', 'rounding', 'grand_total'];
+const figuresOf = (p) => FIGURES.map((f) => p[f]);
+
+test('scanned figures: loading a scan keeps every printed figure and item exactly as read', () => {
+  const s = reducer({ ...initialState }, { type: 'SET_PARSED', parsed: SCANNED_BILL });
+  assert.deepEqual(figuresOf(s.parsed), figuresOf(SCANNED_BILL));
+  assert.equal(s.parsed.scanned_rounding, 0.02);
+  s.parsed.items.forEach((item, i) => {
+    const { id, ...rest } = item;
+    assert.deepEqual(rest, SCANNED_BILL.items[i]);
+  });
+});
+
+test('scanned figures: roster, claim-mode and assignment actions never touch a printed figure', () => {
+  let s = reducer({ ...initialState, payers: ['Me'] }, { type: 'SET_PARSED', parsed: SCANNED_BILL });
+  const before = JSON.stringify([figuresOf(s.parsed), s.parsed.items, s.parsed.scanned_rounding]);
+  s = apply(
+    s,
+    { type: 'ADD_PAYER', name: 'Ben' },
+    { type: 'SET_CLAIM_MODE', mode: 'payers' },
+    { type: 'SET_CLAIM_MODE', mode: 'host' },
+    { type: 'ENSURE_ITEM_DEFAULT_ASSIGNMENT', itemId: s.parsed.items[0].id },
+    { type: 'SET_ITEM_ASSIGNMENT', itemId: s.parsed.items[0].id, name: 'Ben', checked: false },
+    { type: 'RENAME_PAYER', index: 1, name: 'Bea' },
+    { type: 'REMOVE_PAYER', name: 'Bea', index: 1 },
+    { type: 'GO_TO_SCREEN', screen: 'payment' }
+  );
+  assert.equal(JSON.stringify([figuresOf(s.parsed), s.parsed.items, s.parsed.scanned_rounding]), before);
+});
+
+test('scanned figures: only a hand edit changes a figure, only that one, and the scanned value stays on record', () => {
+  let s = reducer({ ...initialState }, { type: 'SET_PARSED', parsed: SCANNED_BILL });
+  s = reducer(s, { type: 'UPDATE_BILL_FIELD', field: 'rounding', value: 0.03 });
+  assert.equal(s.parsed.rounding, 0.03);
+  assert.equal(s.parsed.scanned_rounding, 0.02);
+  assert.deepEqual(
+    figuresOf(s.parsed).filter((_, i) => FIGURES[i] !== 'rounding'),
+    figuresOf(SCANNED_BILL).filter((_, i) => FIGURES[i] !== 'rounding')
+  );
+});

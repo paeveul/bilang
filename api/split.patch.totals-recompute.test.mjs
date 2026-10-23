@@ -173,3 +173,23 @@ test('two concurrent claims on DIFFERENT items both succeed and the stored total
   const sum = Object.values(fresh.per_person).reduce((s, c) => s + c, 0);
   assert.equal(Math.round((sum + fresh.unclaimed) * 100), 2784);
 });
+
+test('scanned figures: a claim leaves the printed discount, rounding, grand total and the edited flag as stored', async () => {
+  row.totals = {
+    subtotal: 24,
+    service_charge: 2.4,
+    tax: 1.44,
+    discount: 0.77,
+    rounding: 0.02,
+    rounding_edited: true,
+    grand_total: 27.09,
+    per_person: {},
+  };
+  const printed = { ...row.totals };
+  const res = await patch(claim('Ali'));
+  assert.equal(res.statusCode, 200);
+  const fresh = (await get('abc')).body.totals;
+  for (const f of ['subtotal', 'service_charge', 'tax', 'discount', 'rounding', 'rounding_edited', 'grand_total']) {
+    assert.equal(fresh[f], printed[f], f);
+  }
+});
